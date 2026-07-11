@@ -11,6 +11,8 @@ const config_1 = require("./config");
 // Routes
 const auth_1 = __importDefault(require("./routes/auth"));
 const stores_1 = __importDefault(require("./routes/stores"));
+const ai_1 = __importDefault(require("./routes/ai"));
+const user_1 = __importDefault(require("./routes/user"));
 const stripe_1 = __importDefault(require("./routes/stripe"));
 const workers_1 = __importDefault(require("./routes/workers"));
 // Services
@@ -27,6 +29,8 @@ app.use('/api/stripe/webhook', express_1.default.raw({ type: 'application/json' 
 // Routes
 app.use('/api/auth', auth_1.default);
 app.use('/api/stores', stores_1.default);
+app.use('/api/ai', ai_1.default);
+app.use('/api/user', user_1.default);
 app.use('/api/stripe', stripe_1.default);
 app.use('/api/workers', workers_1.default);
 // Health check

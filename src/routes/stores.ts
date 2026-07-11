@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { body, param, validationResult } from 'express-validator';
 import { authenticate } from '../middleware/auth';
-import { db } from '../db/supabase';
+import { db, supabase } from '../db/supabase';
 import { v4 as uuidv4 } from 'uuid';
 import { WorkerManager } from '../services/workerManager';
 
@@ -115,6 +115,30 @@ router.get('/:id/credentials', authenticate, [
     res.json(creds.map(c => ({ type: c.type, hasCredentials: true })));
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch credentials' });
+  }
+});
+
+// Delete store
+router.delete('/:id', authenticate, [
+  param('id').isUUID(),
+], async (req: Request, res: Response) => {
+  try {
+    const store = await db.getStoreById(req.params.id);
+    if (!store || store.user_id !== req.user!.id) {
+      return res.status(404).json({ error: 'Store not found' });
+    }
+
+    // Delete from Supabase
+    const { error } = await supabase
+      .from('stores')
+      .delete()
+      .eq('id', req.params.id);
+
+    if (error) throw error;
+
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to delete store' });
   }
 });
 

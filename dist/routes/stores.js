@@ -108,5 +108,27 @@ router.get('/:id/credentials', auth_1.authenticate, [
         res.status(500).json({ error: 'Failed to fetch credentials' });
     }
 });
+// Delete store
+router.delete('/:id', auth_1.authenticate, [
+    (0, express_validator_1.param)('id').isUUID(),
+], async (req, res) => {
+    try {
+        const store = await supabase_1.db.getStoreById(req.params.id);
+        if (!store || store.user_id !== req.user.id) {
+            return res.status(404).json({ error: 'Store not found' });
+        }
+        // Delete from Supabase
+        const { error } = await supabase_1.supabase
+            .from('stores')
+            .delete()
+            .eq('id', req.params.id);
+        if (error)
+            throw error;
+        res.json({ success: true });
+    }
+    catch (error) {
+        res.status(500).json({ error: 'Failed to delete store' });
+    }
+});
 exports.default = router;
 //# sourceMappingURL=stores.js.map

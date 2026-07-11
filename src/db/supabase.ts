@@ -2,7 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import { config } from '../config';
 import { User, Store, ApiCredentials, Worker, Task } from '../types';
 
-const supabase = createClient(config.supabase.url, config.supabase.serviceKey);
+export const supabase = createClient(config.supabase.url, config.supabase.serviceKey);
 
 export class Database {
   // Users
@@ -169,6 +169,63 @@ export class Database {
       .single();
     if (error) throw error;
     return data;
+  }
+
+  // AI Configuration
+  async saveAIConfig(userId: string, config: { provider: string; model: string; apiKey: string }): Promise<any> {
+    const { data, error } = await supabase
+      .from('ai_configs')
+      .upsert({
+        user_id: userId,
+        provider: config.provider,
+        model: config.model,
+        api_key_encrypted: config.apiKey, // TODO: Add actual encryption
+        updated_at: new Date().toISOString(),
+      })
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  }
+
+  async getAIConfig(userId: string): Promise<any> {
+    const { data, error } = await supabase
+      .from('ai_configs')
+      .select('*')
+      .eq('user_id', userId)
+      .single();
+    if (error) return null;
+    return data;
+  }
+
+  // User Credentials (GitHub, Vercel, etc.)
+  async saveUserCredential(userId: string, type: string, data: any): Promise<any> {
+    const { data: result, error } = await supabase
+      .from('user_credentials')
+      .upsert({
+        user_id: userId,
+        type,
+        encrypted_data: JSON.stringify(data),
+        updated_at: new Date().toISOString(),
+      })
+      .select()
+      .single();
+    if (error) throw error;
+    return result;
+  }
+
+  async getUserCredential(userId: string, type: string): Promise<any> {
+    const { data, error } = await supabase
+      .from('user_credentials')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('type', type)
+      .single();
+    if (error) return null;
+    return {
+      ...data,
+      data: JSON.parse(data.encrypted_data || '{}'),
+    };
   }
 
   // Helper for Stripe webhooks

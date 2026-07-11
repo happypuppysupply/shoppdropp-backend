@@ -52,6 +52,29 @@ create table public.workers (
   updated_at timestamp with time zone default timezone('utc'::text, now())
 );
 
+-- AI Configs table
+CREATE TABLE public.ai_configs (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid REFERENCES public.users(id) ON DELETE CASCADE NOT NULL,
+  provider text NOT NULL CHECK (provider IN ('openai', 'openrouter', 'anthropic', 'google', 'mistral')),
+  model text NOT NULL,
+  api_key_encrypted text NOT NULL,
+  created_at timestamp with time zone DEFAULT timezone('utc'::text, now()),
+  updated_at timestamp with time zone DEFAULT timezone('utc'::text, now()),
+  UNIQUE(user_id)
+);
+
+-- User Credentials table (GitHub, Vercel, etc.)
+CREATE TABLE public.user_credentials (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid REFERENCES public.users(id) ON DELETE CASCADE NOT NULL,
+  type text NOT NULL CHECK (type IN ('github', 'vercel')),
+  encrypted_data text NOT NULL,
+  created_at timestamp with time zone DEFAULT timezone('utc'::text, now()),
+  updated_at timestamp with time zone DEFAULT timezone('utc'::text, now()),
+  UNIQUE(user_id, type)
+);
+
 -- Tasks table
 create table public.tasks (
   id uuid primary key default gen_random_uuid(),
@@ -101,6 +124,18 @@ create policy "Users can view own workers"
   on public.workers for select
   using (auth.uid() = user_id);
 
+-- AI Configs: users can CRUD own config
+alter table public.ai_configs enable row level security;
+create policy "Users can CRUD own AI config"
+  on public.ai_configs for all
+  using (auth.uid() = user_id);
+
+-- User Credentials: users can CRUD own credentials
+alter table public.user_credentials enable row level security;
+create policy "Users can CRUD own credentials"
+  on public.user_credentials for all
+  using (auth.uid() = user_id);
+
 -- Tasks: users can view tasks for own workers
 alter table public.tasks enable row level security;
 create policy "Users can view tasks for own workers"
@@ -137,6 +172,12 @@ create trigger api_credentials_updated_at before update on public.api_credential
 create trigger workers_updated_at before update on public.workers
   for each row execute function update_updated_at_column();
 
+create trigger ai_configs_updated_at before update on public.ai_configs
+  for each row execute function update_updated_at_column();
+
+create trigger user_credentials_updated_at before update on public.user_credentials
+  for each row execute function update_updated_at_column();
+
 create trigger tasks_updated_at before update on public.tasks
   for each row execute function update_updated_at_column();
 
@@ -146,4 +187,6 @@ create index idx_stores_worker_id on public.stores(worker_id);
 create index idx_api_credentials_store_id on public.api_credentials(store_id);
 create index idx_workers_user_id on public.workers(user_id);
 create index idx_workers_store_id on public.workers(store_id);
+create index idx_ai_configs_user_id on public.ai_configs(user_id);
+create index idx_user_credentials_user_id on public.user_credentials(user_id);
 create index idx_tasks_worker_id on public.tasks(worker_id);

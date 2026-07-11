@@ -7,6 +7,8 @@ import { config } from './config';
 // Routes
 import authRoutes from './routes/auth';
 import storeRoutes from './routes/stores';
+import aiRoutes from './routes/ai';
+import userRoutes from './routes/user';
 import stripeRoutes from './routes/stripe';
 import workerRoutes from './routes/workers';
 
@@ -28,6 +30,8 @@ app.use('/api/stripe/webhook', express.raw({ type: 'application/json' }));
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/stores', storeRoutes);
+app.use('/api/ai', aiRoutes);
+app.use('/api/user', userRoutes);
 app.use('/api/stripe', stripeRoutes);
 app.use('/api/workers', workerRoutes);
 
