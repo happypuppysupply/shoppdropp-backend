@@ -109,15 +109,6 @@ export class Database {
   }
 
   // Workers
-  async getWorkersByUser(userId: string): Promise<Worker[]> {
-    const { data, error } = await supabase
-      .from('workers')
-      .select('*')
-      .eq('user_id', userId);
-    if (error) throw error;
-    return data || [];
-  }
-
   async getWorkerById(id: string): Promise<Worker | null> {
     const { data, error } = await supabase
       .from('workers')
@@ -126,6 +117,16 @@ export class Database {
       .single();
     if (error) return null;
     return data;
+  }
+
+  async getWorkersByUser(userId: string): Promise<Worker[]> {
+    const { data, error } = await supabase
+      .from('workers')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return data || [];
   }
 
   async createWorker(worker: Partial<Worker>): Promise<Worker> {

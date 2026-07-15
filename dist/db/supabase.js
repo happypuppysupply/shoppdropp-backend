@@ -109,15 +109,6 @@ class Database {
         return data;
     }
     // Workers
-    async getWorkersByUser(userId) {
-        const { data, error } = await exports.supabase
-            .from('workers')
-            .select('*')
-            .eq('user_id', userId);
-        if (error)
-            throw error;
-        return data || [];
-    }
     async getWorkerById(id) {
         const { data, error } = await exports.supabase
             .from('workers')
@@ -127,6 +118,16 @@ class Database {
         if (error)
             return null;
         return data;
+    }
+    async getWorkersByUser(userId) {
+        const { data, error } = await exports.supabase
+            .from('workers')
+            .select('*')
+            .eq('user_id', userId)
+            .order('created_at', { ascending: false });
+        if (error)
+            throw error;
+        return data || [];
     }
     async createWorker(worker) {
         const { data, error } = await exports.supabase

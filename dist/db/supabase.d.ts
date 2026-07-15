@@ -11,8 +11,8 @@ export declare class Database {
     updateStore(id: string, updates: Partial<Store>): Promise<Store>;
     getCredentialsByStore(storeId: string): Promise<ApiCredentials[]>;
     upsertCredentials(creds: Partial<ApiCredentials>): Promise<ApiCredentials>;
-    getWorkersByUser(userId: string): Promise<Worker[]>;
     getWorkerById(id: string): Promise<Worker | null>;
+    getWorkersByUser(userId: string): Promise<Worker[]>;
     createWorker(worker: Partial<Worker>): Promise<Worker>;
     updateWorker(id: string, updates: Partial<Worker>): Promise<Worker>;
     createTask(task: Partial<Task>): Promise<Task>;

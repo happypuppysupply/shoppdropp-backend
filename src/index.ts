@@ -3,11 +3,13 @@ import cors from 'cors';
 import { createServer } from 'http';
 import { WebSocketServer } from 'ws';
 import { config } from './config';
+import { db } from './db/supabase';
 
 // Routes
 import authRoutes from './routes/auth';
 import storeRoutes from './routes/stores';
 import aiRoutes from './routes/ai';
+import aiChatRoutes from './routes/ai-chat';
 import userRoutes from './routes/user';
 import stripeRoutes from './routes/stripe';
 import workerRoutes from './routes/workers';
@@ -16,6 +18,7 @@ import vpsRoutes from './routes/vps';
 // Services
 import { WorkerManager } from './services/workerManager';
 import { initHetznerService } from './services/hetznerService';
+import { getWorkerCommandQueue } from './services/workerCommands';
 
 const app = express();
 const server = createServer(app);
@@ -33,6 +36,7 @@ app.use('/api/stripe/webhook', express.raw({ type: 'application/json' }));
 app.use('/api/auth', authRoutes);
 app.use('/api/stores', storeRoutes);
 app.use('/api/ai', aiRoutes);
+app.use('/api/ai-chat', aiChatRoutes);
 app.use('/api/user', userRoutes);
 app.use('/api/stripe', stripeRoutes);
 app.use('/api/workers', workerRoutes);
@@ -63,6 +67,73 @@ wss.on('connection', (ws, req) => {
 
   console.log(`Worker ${workerId} connected`);
   workerManager.handleWorkerConnection(workerId, ws);
+
+  // Send any pending commands to the worker
+  const commandQueue = getWorkerCommandQueue();
+  const pendingCommands = commandQueue.getPendingCommands(workerId);
+  
+  if (pendingCommands.length > 0) {
+    console.log(`Sending ${pendingCommands.length} pending commands to worker ${workerId}`);
+    pendingCommands.forEach(cmd => {
+      if (ws.readyState === 1) { // WebSocket.OPEN
+        ws.send(JSON.stringify({
+          type: 'command',
+          command: cmd,
+        }));
+        commandQueue.updateCommand(cmd.id, { status: 'running', started_at: new Date().toISOString() });
+      }
+    });
+  }
+
+  // Subscribe to new commands for this worker
+  const commandHandler = (command: any) => {
+    if (ws.readyState === 1) {
+      ws.send(JSON.stringify({
+        type: 'command',
+        command,
+      }));
+      commandQueue.updateCommand(command.id, { status: 'running', started_at: new Date().toISOString() });
+    }
+  };
+  
+  commandQueue.subscribe(workerId, commandHandler);
+
+  // Handle messages from worker
+  ws.on('message', async (data) => {
+    try {
+      const message = JSON.parse(data.toString());
+      
+      if (message.type === 'command_result') {
+        const { command_id, result, error } = message;
+        
+        if (error) {
+          await commandQueue.failCommand(command_id, error);
+          console.error(`Command ${command_id} failed:`, error);
+        } else {
+          await commandQueue.completeCommand(command_id, result);
+          console.log(`Command ${command_id} completed:`, result);
+        }
+      }
+      
+      if (message.type === 'heartbeat') {
+        // Update worker last_heartbeat
+        await db.updateWorker(workerId, { last_heartbeat: new Date().toISOString() });
+      }
+      
+      if (message.type === 'task_progress') {
+        // Update task progress
+        console.log(`Task ${message.task_id} progress: ${message.progress}%`);
+      }
+    } catch (e) {
+      console.error('Error handling worker message:', e);
+    }
+  });
+
+  // Cleanup on disconnect
+  ws.on('close', () => {
+    commandQueue.unsubscribe(workerId, commandHandler);
+    console.log(`Worker ${workerId} disconnected`);
+  });
 });
 
 // Error handling
