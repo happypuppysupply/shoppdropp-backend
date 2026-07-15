@@ -22,7 +22,7 @@ export interface Store {
 export interface ApiCredentials {
     id: string;
     store_id: string;
-    type: 'shopify' | 'meta_ads' | 'autods';
+    type: 'shopify' | 'meta_ads' | 'autods' | 'cj_dropshipping' | 'rapidapi';
     encrypted_data: string;
     created_at: string;
     updated_at: string;
@@ -31,9 +31,13 @@ export interface Worker {
     id: string;
     user_id: string;
     store_id?: string | null;
-    status: 'idle' | 'assigned' | 'provisioning' | 'running' | 'error';
+    status: 'idle' | 'assigned' | 'provisioning' | 'configuring' | 'running' | 'error';
     container_id?: string | null;
     ip_address?: string | null;
+    hetzner_server_id?: string | null;
+    hetzner_server_type?: string | null;
+    ssh_key_fingerprint?: string | null;
+    openclaw_version?: string | null;
     last_heartbeat?: string;
     created_at: string;
     updated_at: string;

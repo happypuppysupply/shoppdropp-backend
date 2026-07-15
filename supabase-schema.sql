@@ -15,10 +15,10 @@ create table public.users (
   updated_at timestamp with time zone default timezone('utc'::text, now())
 );
 
--- Stores table
-create table public.stores (
+-- Stores table (modified - no FK constraint since users table may not exist yet)
+create table if not exists public.stores (
   id uuid primary key default gen_random_uuid(),
-  user_id uuid references public.users(id) on delete cascade not null,
+  user_id uuid not null,
   name text not null,
   url text not null,
   platform text default 'shopify',

@@ -68,7 +68,7 @@ router.get('/:id', authenticate, [
 // Save API credentials
 router.post('/:id/credentials', authenticate, [
   param('id').isUUID(),
-  body('type').isIn(['shopify', 'meta_ads', 'autods']),
+  body('type').isIn(['shopify', 'meta_ads', 'autods', 'cj_dropshipping', 'ai_provider', 'github', 'vercel']),
   body('credentials').isObject(),
 ], async (req: Request, res: Response) => {
   const errors = validationResult(req);
@@ -112,9 +112,45 @@ router.get('/:id/credentials', authenticate, [
 
     const creds = await db.getCredentialsByStore(store.id);
     // Return types only, not actual credentials (for security)
-    res.json(creds.map(c => ({ type: c.type, hasCredentials: true })));
+    // Return types only, not actual credentials (for security)
+    const credentialTypes = creds.map(c => ({ type: c.type, hasCredentials: true }));
+    res.json(credentialTypes);
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch credentials' });
+  }
+});
+
+// Update store
+router.put('/:id', authenticate, [
+  param('id').isUUID(),
+  body('name').optional().trim().notEmpty(),
+], async (req: Request, res: Response) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ errors: errors.array() });
+  }
+
+  try {
+    const store = await db.getStoreById(req.params.id);
+    if (!store || store.user_id !== req.user!.id) {
+      return res.status(404).json({ error: 'Store not found' });
+    }
+
+    const updates: any = {};
+    if (req.body.name) updates.name = req.body.name;
+
+    const { data, error } = await supabase
+      .from('stores')
+      .update(updates)
+      .eq('id', req.params.id)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    res.json(data);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to update store' });
   }
 });
 

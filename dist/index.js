@@ -15,8 +15,10 @@ const ai_1 = __importDefault(require("./routes/ai"));
 const user_1 = __importDefault(require("./routes/user"));
 const stripe_1 = __importDefault(require("./routes/stripe"));
 const workers_1 = __importDefault(require("./routes/workers"));
+const vps_1 = __importDefault(require("./routes/vps"));
 // Services
 const workerManager_1 = require("./services/workerManager");
+const hetznerService_1 = require("./services/hetznerService");
 const app = (0, express_1.default)();
 const server = (0, http_1.createServer)(app);
 const wss = new ws_1.WebSocketServer({ server, path: '/ws' });
@@ -33,6 +35,15 @@ app.use('/api/ai', ai_1.default);
 app.use('/api/user', user_1.default);
 app.use('/api/stripe', stripe_1.default);
 app.use('/api/workers', workers_1.default);
+app.use('/api/vps', vps_1.default);
+// Initialize Hetzner service if token is available
+if (process.env.HETZNER_API_TOKEN) {
+    (0, hetznerService_1.initHetznerService)(process.env.HETZNER_API_TOKEN);
+    console.log('☁️ Hetzner service initialized');
+}
+else {
+    console.warn('⚠️ HETZNER_API_TOKEN not set - VPS provisioning disabled');
+}
 // Health check
 app.get('/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
@@ -58,5 +69,7 @@ server.listen(config_1.config.port, () => {
     console.log(`🚀 ShoppDropp Backend running on port ${config_1.config.port}`);
     console.log(`📡 WebSocket server ready`);
     console.log(`🔧 Environment: ${config_1.config.nodeEnv}`);
+    console.log(`🖥️  VPS Provisioning: ${process.env.HETZNER_API_TOKEN ? 'Enabled' : 'Disabled'}`);
+    console.log(`🔐 SSH Key: ${process.env.SSH_PRIVATE_KEY ? 'Configured' : 'Not configured'}`);
 });
 //# sourceMappingURL=index.js.map

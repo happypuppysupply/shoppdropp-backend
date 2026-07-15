@@ -8,6 +8,15 @@ const router = Router();
 // Valid AI providers
 const VALID_PROVIDERS = ['openai', 'openrouter', 'anthropic', 'google', 'mistral'];
 
+// Default model configurations
+const DEFAULT_MODELS: Record<string, string> = {
+  openai: 'gpt-4o',
+  openrouter: 'moonshotai/kimi-k2.5',
+  anthropic: 'claude-3-5-sonnet-20241022',
+  google: 'gemini-1.5-pro',
+  mistral: 'mistral-large-latest',
+};
+
 // Configure AI provider
 router.post(
   '/configure',

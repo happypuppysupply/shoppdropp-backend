@@ -5,6 +5,7 @@ services:
     plan: free
     buildCommand: npm install && npm run build
     startCommand: node dist/index.js
+    healthCheckPath: /health
     envVars:
       - key: NODE_ENV
         value: production
@@ -16,7 +17,11 @@ services:
         sync: false
       - key: STRIPE_SECRET_KEY
         sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
       - key: JWT_SECRET
         generateValue: true
       - key: FRONTEND_URL
+        value: https://shoppdropp-blueprint.vercel.app
+      - key: CORS_ORIGIN
         value: https://shoppdropp-blueprint.vercel.app
