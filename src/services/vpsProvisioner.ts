@@ -81,12 +81,19 @@ export class VPSProvisioner {
       };
 
     } catch (error: any) {
-      console.error(`[VPS] Provisioning failed:`, error);
+      console.error(`[VPS] Provisioning failed for worker ${config.workerId}:`, error);
+      console.error(`[VPS] Error message:`, error.message);
+      console.error(`[VPS] Error stack:`, error.stack);
       
       // Update worker status to error
-      await db.updateWorker(config.workerId, {
-        status: 'error',
-      });
+      try {
+        await db.updateWorker(config.workerId, {
+          status: 'error',
+        });
+        console.log(`[VPS] Worker ${config.workerId} status updated to error`);
+      } catch (dbError) {
+        console.error(`[VPS] Failed to update worker status:`, dbError);
+      }
 
       return {
         serverId: 0,
