@@ -130,16 +130,22 @@ export class VPSProvisioner {
       console.log(`[SSH] Connected to ${ipAddress}`);
 
       // Step 1: Update system and install dependencies
-      console.log(`[SSH] Step 1/9: Updating system...`);
-      await this.runCommand(ssh, 'apt-get update && apt-get upgrade -y');
-      console.log(`[SSH] Step 1a: Installing tools...`);
-      await this.runCommand(ssh, 'apt-get install -y curl wget git unzip jq');
+      console.log(`[SSH] Step 1/9: Updating system (this takes 2-3 minutes)...`);
+      await this.runCommand(ssh, 'apt-get update', 300000);
+      console.log(`[SSH] Step 1a: Upgrading packages...`);
+      await this.runCommand(ssh, 'DEBIAN_FRONTEND=noninteractive apt-get upgrade -y -q', 300000);
+      console.log(`[SSH] Step 1b: Installing tools...`);
+      await this.runCommand(ssh, 'DEBIAN_FRONTEND=noninteractive apt-get install -y -q curl wget git unzip jq', 180000);
 
       // Step 2: Install Node.js 20
       console.log(`[SSH] Step 2/9: Installing Node.js...`);
-      await this.runCommand(ssh, 'curl -fsSL https://deb.nodesource.com/setup_20.x | bash -');
+      await this.runCommand(ssh, 'curl -fsSL https://deb.nodesource.com/setup_20.x | bash -', 180000);
       console.log(`[SSH] Step 2a: Installing nodejs package...`);
-      await this.runCommand(ssh, 'apt-get install -y nodejs');
+      await this.runCommand(ssh, 'DEBIAN_FRONTEND=noninteractive apt-get install -y -q nodejs', 180000);
+      
+      // Verify Node.js
+      const nodeCheck = await ssh.execCommand('node --version');
+      console.log(`[SSH] Node.js version: ${nodeCheck.stdout.trim()}`);
 
       // Step 3: Create openclaw user
       console.log(`[SSH] Step 3/9: Creating openclaw user...`);
@@ -151,63 +157,84 @@ export class VPSProvisioner {
       await this.runCommand(ssh, 'mkdir -p /opt/openclaw');
       await this.runCommand(ssh, 'chown openclaw:openclaw /opt/openclaw');
 
-      // Step 5: Download and install OpenClaw
-      console.log(`[SSH] Step 5/9: Setting up OpenClaw...`);
+      // Step 5: Create OpenClaw worker script
+      console.log(`[SSH] Step 5/9: Creating OpenClaw worker script...`);
       
-      // Since OpenClaw doesn't have public releases yet, create a worker script
-      console.log(`[SSH] Creating OpenClaw worker script...`);
-      await this.runCommand(ssh, `cat > /opt/openclaw/openclaw << 'ENDSCRIPT'
-#!/bin/bash
+      const workerScript = `#!/bin/bash
 # OpenClaw Worker - ShoppDropp VPS Worker
 set -e
 
-echo "=========================================="
-echo "OpenClaw Worker Starting..."
+echo "========================================"
+echo "OpenClaw Worker Started"
 echo "Worker ID: \${WORKER_ID:-unknown}"
 echo "Store ID: \${STORE_ID:-unknown}"
 echo "AI Provider: \${AI_PROVIDER:-openrouter}"
-echo "=========================================="
+echo "========================================"
 
-# Create a simple heartbeat loop
+# Log environment info
+env | grep -E '^(WORKER|STORE|AI|CJ|VERCEL|GITHUB)' | sed 's/^/ENV: /'
+
+# Keep worker running with heartbeat
 while true; do
-    echo "[$(date -Iseconds)] Worker heartbeat - Ready for tasks"
+    echo "[$(date -Iseconds)] Worker heartbeat - Ready for tasks from store \${STORE_ID}"
     sleep 30
-done
-ENDSCRIPT`);
+done`;
+
+      // Write script using echo to avoid heredoc issues
+      await this.runCommand(ssh, `echo '${workerScript.replace(/'/g, "'\"'\"'")}' > /opt/openclaw/openclaw`);
       await this.runCommand(ssh, 'chmod +x /opt/openclaw/openclaw');
+      await this.runCommand(ssh, 'chown openclaw:openclaw /opt/openclaw/openclaw');
       console.log(`[SSH] OpenClaw worker script created`);
 
       // Step 6: Create .env file with all configuration
       console.log(`[SSH] Step 6/9: Configuring environment...`);
       const envContent = this.buildEnvFile(config);
-      await this.runCommand(ssh, `cat > /opt/openclaw/.env << 'EOF'
-${envContent}
-EOF`);
+      
+      // Write env file line by line to handle special characters
+      const envLines = envContent.split('\n').filter(line => line.trim());
+      for (const line of envLines) {
+        await this.runCommand(ssh, `echo '${line.replace(/'/g, "'\"'\"'")}' >> /opt/openclaw/.env`);
+      }
+      await this.runCommand(ssh, 'chown openclaw:openclaw /opt/openclaw/.env');
+      await this.runCommand(ssh, 'chmod 600 /opt/openclaw/.env');
 
       // Step 7: Create systemd service
       console.log(`[SSH] Step 7/9: Creating systemd service...`);
       const serviceContent = this.buildSystemdService();
-      await this.runCommand(ssh, `cat > /etc/systemd/system/openclaw.service << 'EOF'
-${serviceContent}
-EOF`);
+      const serviceLines = serviceContent.split('\n');
+      for (const line of serviceLines) {
+        await this.runCommand(ssh, `echo '${line.replace(/'/g, "'\"'\"'")}' >> /etc/systemd/system/openclaw.service`);
+      }
 
       // Step 8: Start OpenClaw service
       console.log(`[SSH] Step 8/9: Starting OpenClaw service...`);
-      await this.runCommand(ssh, 'systemctl daemon-reload');
-      await this.runCommand(ssh, 'systemctl enable openclaw');
-      await this.runCommand(ssh, 'systemctl start openclaw');
+      await this.runCommand(ssh, 'systemctl daemon-reload', 60000);
+      await this.runCommand(ssh, 'systemctl enable openclaw', 30000);
+      await this.runCommand(ssh, 'systemctl start openclaw', 60000);
 
       // Step 9: Verify service is running
       console.log(`[SSH] Step 9/9: Verifying service...`);
-      await new Promise(resolve => setTimeout(resolve, 5000));
-      const statusResult = await ssh.execCommand('systemctl is-active openclaw');
+      await new Promise(resolve => setTimeout(resolve, 10000));
       
-      if (statusResult.stdout.trim() !== 'active') {
+      // Check service status multiple times
+      let isActive = false;
+      for (let i = 0; i < 3; i++) {
+        const statusResult = await ssh.execCommand('systemctl is-active openclaw');
+        if (statusResult.stdout.trim() === 'active') {
+          isActive = true;
+          break;
+        }
+        console.log(`[SSH] Service check ${i + 1}/3: not active yet, waiting...`);
+        await new Promise(resolve => setTimeout(resolve, 5000));
+      }
+      
+      if (!isActive) {
         const logs = await ssh.execCommand('journalctl -u openclaw --no-pager -n 50');
-        throw new Error(`OpenClaw service failed to start. Logs: ${logs.stdout}`);
+        console.error(`[SSH] Service failed to start. Logs:\n${logs.stdout}`);
+        throw new Error(`OpenClaw service failed to start. Check logs.`);
       }
 
-      console.log(`[SSH] OpenClaw service is active`);
+      console.log(`[SSH] ✅ OpenClaw service is active`);
 
     } finally {
       ssh.dispose();
