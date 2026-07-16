@@ -80,7 +80,7 @@ class Database {
     async updateStore(id, updates) {
         const { data, error } = await exports.supabase
             .from('stores')
-            .update({ ...updates, updated_at: new Date().toISOString() })
+            .update(updates)
             .eq('id', id)
             .select()
             .single();
@@ -142,7 +142,7 @@ class Database {
     async updateWorker(id, updates) {
         const { data, error } = await exports.supabase
             .from('workers')
-            .update({ ...updates, updated_at: new Date().toISOString() })
+            .update(updates)
             .eq('id', id)
             .select()
             .single();

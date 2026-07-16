@@ -80,7 +80,7 @@ export class Database {
   async updateStore(id: string, updates: Partial<Store>): Promise<Store> {
     const { data, error } = await supabase
       .from('stores')
-      .update({ ...updates, updated_at: new Date().toISOString() })
+      .update(updates)
       .eq('id', id)
       .select()
       .single();
@@ -142,7 +142,7 @@ export class Database {
   async updateWorker(id: string, updates: Partial<Worker>): Promise<Worker> {
     const { data, error } = await supabase
       .from('workers')
-      .update({ ...updates, updated_at: new Date().toISOString() })
+      .update(updates)
       .eq('id', id)
       .select()
       .single();
