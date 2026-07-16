@@ -14,6 +14,7 @@ import userRoutes from './routes/user';
 import stripeRoutes from './routes/stripe';
 import workerRoutes from './routes/workers';
 import vpsRoutes from './routes/vps';
+import debugRoutes from './routes/debug';
 
 // Services
 import { WorkerManager } from './services/workerManager';
@@ -41,6 +42,7 @@ app.use('/api/user', userRoutes);
 app.use('/api/stripe', stripeRoutes);
 app.use('/api/workers', workerRoutes);
 app.use('/api/vps', vpsRoutes);
+app.use('/api/debug', debugRoutes);
 
 // Initialize Hetzner service if token is available
 if (process.env.HETZNER_API_TOKEN) {
