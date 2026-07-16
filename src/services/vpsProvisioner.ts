@@ -73,7 +73,6 @@ export class VPSProvisioner {
       await db.updateWorker(config.workerId, {
         hetzner_server_id: server.id.toString(),
         status: 'configuring',
-        ip_address: readyServer.public_net.ipv4.ip,
       });
 
       // Step 4: Wait a bit more for SSH to be available
