@@ -14,6 +14,7 @@ import userRoutes from './routes/user';
 import stripeRoutes from './routes/stripe';
 import workerRoutes from './routes/workers';
 import vpsRoutes from './routes/vps';
+import vpsSimpleRoutes from './routes/vps-simple';
 import debugRoutes from './routes/debug';
 
 // Services
@@ -42,6 +43,7 @@ app.use('/api/user', userRoutes);
 app.use('/api/stripe', stripeRoutes);
 app.use('/api/workers', workerRoutes);
 app.use('/api/vps', vpsRoutes);
+app.use('/api/vps-simple', vpsSimpleRoutes);
 app.use('/api/debug', debugRoutes);
 
 // Initialize Hetzner service if token is available

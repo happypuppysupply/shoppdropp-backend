@@ -18,6 +18,7 @@ const user_1 = __importDefault(require("./routes/user"));
 const stripe_1 = __importDefault(require("./routes/stripe"));
 const workers_1 = __importDefault(require("./routes/workers"));
 const vps_1 = __importDefault(require("./routes/vps"));
+const vps_simple_1 = __importDefault(require("./routes/vps-simple"));
 const debug_1 = __importDefault(require("./routes/debug"));
 // Services
 const workerManager_1 = require("./services/workerManager");
@@ -41,6 +42,7 @@ app.use('/api/user', user_1.default);
 app.use('/api/stripe', stripe_1.default);
 app.use('/api/workers', workers_1.default);
 app.use('/api/vps', vps_1.default);
+app.use('/api/vps-simple', vps_simple_1.default);
 app.use('/api/debug', debug_1.default);
 // Initialize Hetzner service if token is available
 if (process.env.HETZNER_API_TOKEN) {
