@@ -136,11 +136,13 @@ export class HetznerService {
   // Get server details
   async getServer(serverId: number): Promise<HetznerServer> {
     try {
+      console.log(`[Hetzner] Getting server ${serverId}...`);
       const response = await this.client.get(`/servers/${serverId}`);
+      console.log(`[Hetzner] Got server: ${response.data.server?.id}, status: ${response.data.server?.status}`);
       return response.data.server;
     } catch (error: any) {
-      console.error('[Hetzner] Get server error:', error.response?.data || error.message);
-      throw new Error(`Failed to get server: ${error.response?.data?.error?.message || error.message}`);
+      console.error(`[Hetzner] Get server ${serverId} error:`, error.response?.status, error.response?.data || error.message);
+      throw new Error(`Failed to get server ${serverId}: ${error.response?.data?.error?.message || error.message || 'Unknown error'}`);
     }
   }
 
