@@ -9,24 +9,35 @@ const router = Router();
 
 // OpenRouter API client
 async function callOpenRouter(messages: any[], apiKey: string, model: string = 'moonshotai/kimi-k2.5') {
-  const response = await axios.post(
-    'https://openrouter.ai/api/v1/chat/completions',
-    {
-      model,
-      messages,
-      temperature: 0.7,
-      max_tokens: 4000,
-    },
-    {
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': 'https://shoppdropp.com',
-        'X-Title': 'ShoppDropp AI Agent',
+  console.log('Calling OpenRouter with model:', model, 'key length:', apiKey?.length);
+  
+  if (!apiKey || apiKey.length < 10) {
+    throw new Error('Invalid API key provided');
+  }
+  
+  try {
+    const response = await axios.post(
+      'https://openrouter.ai/api/v1/chat/completions',
+      {
+        model,
+        messages,
+        temperature: 0.7,
+        max_tokens: 4000,
       },
-    }
-  );
-  return response.data.choices[0].message;
+      {
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': 'https://shoppdropp.com',
+          'X-Title': 'ShoppDropp AI Agent',
+        },
+      }
+    );
+    return response.data.choices[0].message;
+  } catch (error: any) {
+    console.error('OpenRouter API error:', error.response?.data || error.message);
+    throw new Error(error.response?.data?.error?.message || 'Failed to get AI response');
+  }
 }
 
 // System prompt for the AI agent
@@ -80,10 +91,18 @@ router.post('/chat', authenticate, async (req: Request, res: Response) => {
     const user = (req as any).user;
     const { message, conversation_history = [] } = req.body;
 
+    console.log('AI Chat request from user:', user.id);
+
     // Get user's AI config
     const aiConfig = await db.getAIConfig(user.id);
+    console.log('AI Config retrieved:', aiConfig ? { provider: aiConfig.provider, model: aiConfig.model, hasKey: !!aiConfig.api_key_encrypted } : 'null');
+    
     if (!aiConfig) {
       return res.status(400).json({ error: 'AI provider not configured. Please set up OpenRouter in settings.' });
+    }
+
+    if (!aiConfig.api_key_encrypted) {
+      return res.status(400).json({ error: 'AI API key not found. Please reconfigure your AI provider in settings.' });
     }
 
     // Get user's worker/store info for context
