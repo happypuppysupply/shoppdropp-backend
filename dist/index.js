@@ -20,6 +20,7 @@ const workers_1 = __importDefault(require("./routes/workers"));
 const vps_1 = __importDefault(require("./routes/vps"));
 const vps_simple_1 = __importDefault(require("./routes/vps-simple"));
 const vps_debug_1 = __importDefault(require("./routes/vps-debug"));
+const vps_test_1 = __importDefault(require("./routes/vps-test"));
 const debug_1 = __importDefault(require("./routes/debug"));
 // Services
 const workerManager_1 = require("./services/workerManager");
@@ -45,6 +46,7 @@ app.use('/api/workers', workers_1.default);
 app.use('/api/vps', vps_1.default);
 app.use('/api/vps-simple', vps_simple_1.default);
 app.use('/api/vps-debug', vps_debug_1.default);
+app.use('/api/vps-test', vps_test_1.default);
 app.use('/api/debug', debug_1.default);
 // Initialize Hetzner service if token is available
 if (process.env.HETZNER_API_TOKEN) {

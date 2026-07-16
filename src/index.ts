@@ -16,6 +16,7 @@ import workerRoutes from './routes/workers';
 import vpsRoutes from './routes/vps';
 import vpsSimpleRoutes from './routes/vps-simple';
 import vpsDebugRoutes from './routes/vps-debug';
+import vpsTestRoutes from './routes/vps-test';
 import debugRoutes from './routes/debug';
 
 // Services
@@ -46,6 +47,7 @@ app.use('/api/workers', workerRoutes);
 app.use('/api/vps', vpsRoutes);
 app.use('/api/vps-simple', vpsSimpleRoutes);
 app.use('/api/vps-debug', vpsDebugRoutes);
+app.use('/api/vps-test', vpsTestRoutes);
 app.use('/api/debug', debugRoutes);
 
 // Initialize Hetzner service if token is available
