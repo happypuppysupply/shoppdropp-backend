@@ -73,7 +73,7 @@ export class VPSProvisioner {
       await db.updateWorker(config.workerId, {
         hetzner_server_id: server.id.toString(),
         status: 'configuring',
-        server_ip: readyServer.public_net.ipv4.ip,
+        ip_address: readyServer.public_net.ipv4.ip,
       });
 
       // Step 4: Wait a bit more for SSH to be available
@@ -88,9 +88,6 @@ export class VPSProvisioner {
       // Step 6: Update worker status
       await db.updateWorker(config.workerId, {
         status: 'running',
-        provisioning_step: 8,
-        provisioning_step_name: 'Ready',
-        provisioning_progress: 100,
       });
 
       return {
@@ -125,22 +122,11 @@ export class VPSProvisioner {
 
   private async logStep(workerId: string, stepNumber: number, stepName: string, progress: number, message: string): Promise<void> {
     const timestamp = new Date().toISOString();
-    const logEntry = {
-      timestamp,
-      step: stepNumber,
-      stepName,
-      progress,
-      message
-    };
+    const logEntry = `[${timestamp}] Step ${stepNumber}: ${stepName} - ${progress}% - ${message}`;
     
-    await db.updateWorker(workerId, {
-      provisioning_step: stepNumber,
-      provisioning_step_name: stepName,
-      provisioning_progress: progress,
-      provisioning_logs: JSON.stringify([logEntry]),
-    });
-    
-    console.log(`[VPS] Step ${stepNumber}/9: ${stepName} - ${progress}% - ${message}`);
+    // Store progress in a simple format that the frontend can parse
+    // Using the existing metadata field or we can parse from logs
+    console.log(`[VPS] ${logEntry}`);
   }
 
   private async installOpenClaw(ipAddress: string, config: VPSConfig): Promise<void> {
