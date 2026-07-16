@@ -118,12 +118,13 @@ export class VPSProvisioner {
     const ssh = new NodeSSH();
     
     try {
+      console.log(`[SSH] Connecting to ${ipAddress}...`);
       // Connect via SSH
       await ssh.connect({
         host: ipAddress,
         username: 'root',
         privateKey: this.sshPrivateKey,
-        readyTimeout: 60000,
+        readyTimeout: 120000,
       });
 
       console.log(`[SSH] Connected to ${ipAddress}`);
@@ -200,11 +201,16 @@ EOF`);
     }
   }
 
-  private async runCommand(ssh: NodeSSH, command: string): Promise<void> {
-    const result = await ssh.execCommand(command);
+  private async runCommand(ssh: NodeSSH, command: string, timeoutMs: number = 120000): Promise<void> {
+    console.log(`[SSH] Running: ${command.substring(0, 80)}...`);
+    const result = await ssh.execCommand(command, { execOptions: { timeout: timeoutMs } });
     if (result.code !== 0) {
-      throw new Error(`Command failed: ${command}\nError: ${result.stderr}`);
+      console.error(`[SSH] Command failed with code ${result.code}: ${command}`);
+      console.error(`[SSH] stderr: ${result.stderr}`);
+      console.error(`[SSH] stdout: ${result.stdout}`);
+      throw new Error(`Command failed (code ${result.code}): ${result.stderr || 'No error message'}`);
     }
+    console.log(`[SSH] Command succeeded`);
   }
 
   private buildEnvFile(config: VPSConfig): string {
