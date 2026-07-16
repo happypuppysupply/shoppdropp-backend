@@ -35,7 +35,7 @@ export class VPSProvisioner {
       console.log(`[VPS] Step 1: Creating server ${serverName}...`);
       const serverConfig: HetznerServerConfig = {
         name: serverName,
-        server_type: 'cpx22', // 2 vCPU, 4GB RAM, 80GB NVMe
+        server_type: 'cax11', // 2 vCPU ARM, 4GB RAM, 40GB NVMe
         image: 'ubuntu-22.04',
         labels: {
           worker_id: config.workerId,
