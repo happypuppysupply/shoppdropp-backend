@@ -56,7 +56,17 @@ router.post('/create-and-provision', authenticate, async (req: Request, res: Res
     console.log('Store updated, starting provisioning...');
 
     // Start provisioning
-    const provisioner = createVPSProvisioner();
+    let provisioner;
+    try {
+      provisioner = createVPSProvisioner();
+    } catch (initError: any) {
+      console.error('[VPS] Failed to initialize provisioner:', initError.message);
+      await db.updateWorker(workerId, { status: 'error' });
+      return res.status(500).json({ 
+        error: 'Failed to initialize VPS provisioner', 
+        details: initError.message 
+      });
+    }
     
     // Get AI config for the env vars
     const aiConfig = await db.getAIConfig(user.id);
@@ -69,13 +79,14 @@ router.post('/create-and-provision', authenticate, async (req: Request, res: Res
     }
 
     // Start async provisioning
+    console.log('[VPS] Starting provisionVPS with config:', { workerId, storeId: store.id, userId: user.id });
     provisioner.provisionVPS({
       workerId,
       storeId: store.id,
       userId: user.id,
       envVars,
     }).then(result => {
-      console.log('Provisioning result:', result);
+      console.log('[VPS] Provisioning result:', result);
       if (result.status === 'failed') {
         console.error('[VPS] Provisioning failed:', result.error);
         db.updateWorker(workerId, { status: 'error' }).catch(console.error);
@@ -83,7 +94,8 @@ router.post('/create-and-provision', authenticate, async (req: Request, res: Res
         console.log(`[VPS] Provisioning complete: ${result.ipAddress}`);
       }
     }).catch(error => {
-      console.error('[VPS] Unexpected error:', error);
+      console.error('[VPS] Unexpected error in provisionVPS:', error);
+      console.error('[VPS] Error stack:', error.stack);
       db.updateWorker(workerId, { status: 'error' }).catch(console.error);
     });
 
