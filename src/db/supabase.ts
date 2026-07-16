@@ -2,7 +2,12 @@ import { createClient } from '@supabase/supabase-js';
 import { config } from '../config';
 import { User, Store, ApiCredentials, Worker, Task } from '../types';
 
-export const supabase = createClient(config.supabase.url, config.supabase.serviceKey);
+// Create Supabase client with schema cache disabled to avoid stale column errors
+export const supabase = createClient(config.supabase.url, config.supabase.serviceKey, {
+  db: {
+    schema: 'public'
+  }
+});
 
 export class Database {
   // Users

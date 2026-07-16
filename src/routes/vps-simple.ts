@@ -23,21 +23,20 @@ router.post('/create-and-provision', authenticate, async (req: Request, res: Res
     const store = stores[0];
     console.log('Using store:', store.id, store.name);
 
-    // Check if store already has a worker
-    if (store.worker_id) {
-      const existingWorker = await db.getWorkerById(store.worker_id);
-      if (existingWorker && existingWorker.status !== 'error') {
-        console.log('Store already has worker:', store.worker_id);
-        return res.json({
-          success: true,
-          message: 'Worker already exists',
-          workerId: store.worker_id,
-          status: existingWorker.status,
-        });
-      }
+    // Check if store already has a worker by querying workers table
+    const workers = await db.getWorkersByUser(user.id);
+    const existingWorker = workers.find(w => w.store_id === store.id);
+    if (existingWorker && existingWorker.status !== 'error') {
+      console.log('Store already has worker:', existingWorker.id);
+      return res.json({
+        success: true,
+        message: 'Worker already exists',
+        workerId: existingWorker.id,
+        status: existingWorker.status,
+      });
     }
 
-    // Create a new worker
+    // Create a new worker with store_id
     const workerId = uuidv4();
     console.log('Creating worker:', workerId);
     
@@ -48,12 +47,7 @@ router.post('/create-and-provision', authenticate, async (req: Request, res: Res
       status: 'provisioning',
     });
     
-    console.log('Worker created, updating store...');
-
-    // Update store with worker_id
-    await db.updateStore(store.id, { worker_id: workerId });
-    
-    console.log('Store updated, starting provisioning...');
+    console.log('Worker created, starting provisioning...');
 
     // Start provisioning
     let provisioner;

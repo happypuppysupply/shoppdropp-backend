@@ -3,7 +3,12 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.db = exports.Database = exports.supabase = void 0;
 const supabase_js_1 = require("@supabase/supabase-js");
 const config_1 = require("../config");
-exports.supabase = (0, supabase_js_1.createClient)(config_1.config.supabase.url, config_1.config.supabase.serviceKey);
+// Create Supabase client with schema cache disabled to avoid stale column errors
+exports.supabase = (0, supabase_js_1.createClient)(config_1.config.supabase.url, config_1.config.supabase.serviceKey, {
+    db: {
+        schema: 'public'
+    }
+});
 class Database {
     // Users
     async getUserById(id) {
