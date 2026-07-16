@@ -135,15 +135,35 @@ export class VPSProvisioner {
       console.log(`[SSH] Connecting to ${ipAddress}...`);
       await this.logStep(config.workerId, 2, 'Install Dependencies', 10, 'Connecting via SSH...');
       
-      // Connect via SSH (with host key check disabled for cloud instances)
-      await ssh.connect({
-        host: ipAddress,
-        username: 'root',
-        privateKey: this.sshPrivateKey,
-        readyTimeout: 60000,
-        tryKeyboard: false,
-        keepaliveInterval: 5000,
-      });
+      // Retry SSH connection up to 5 times (cloud instances take time to start SSH)
+      let connected = false;
+      let lastError: any;
+      for (let attempt = 1; attempt <= 5; attempt++) {
+        try {
+          console.log(`[SSH] Connection attempt ${attempt}/5...`);
+          await ssh.connect({
+            host: ipAddress,
+            username: 'root',
+            privateKey: this.sshPrivateKey,
+            readyTimeout: 30000,
+            tryKeyboard: false,
+          });
+          connected = true;
+          console.log(`[SSH] Connected on attempt ${attempt}`);
+          break;
+        } catch (err: any) {
+          lastError = err;
+          console.log(`[SSH] Attempt ${attempt} failed: ${err.message}`);
+          if (attempt < 5) {
+            console.log(`[SSH] Waiting 30 seconds before retry...`);
+            await new Promise(resolve => setTimeout(resolve, 30000));
+          }
+        }
+      }
+      
+      if (!connected) {
+        throw new Error(`Failed to connect after 5 attempts: ${lastError?.message}`);
+      }
 
       console.log(`[SSH] Connected to ${ipAddress}`);
       await this.logStep(config.workerId, 2, 'Install Dependencies', 20, 'Connected, updating system packages...');
