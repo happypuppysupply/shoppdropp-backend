@@ -53,12 +53,21 @@ export class HetznerService {
   // Upload or get existing SSH key
   async uploadSSHKey(name: string, publicKey: string): Promise<number> {
     try {
-      const fingerprint = await this.getKeyFingerprint(publicKey);
       const keys = await this.listSSHKeys();
-      const existing = keys.find(k => k.fingerprint === fingerprint);
-      if (existing) {
-        console.log(`[Hetzner] Using existing SSH key: ${existing.id}`);
-        return existing.id;
+      
+      // First try to find by name
+      const byName = keys.find(k => k.name === name);
+      if (byName) {
+        console.log(`[Hetzner] Using existing SSH key by name: ${byName.id}`);
+        return byName.id;
+      }
+      
+      // Then try by fingerprint (first 50 chars of key body)
+      const keyBody = publicKey.trim().split(' ')[1] || '';
+      const byFingerprint = keys.find(k => k.public_key.includes(keyBody.substring(0, 50)));
+      if (byFingerprint) {
+        console.log(`[Hetzner] Using existing SSH key by fingerprint: ${byFingerprint.id}`);
+        return byFingerprint.id;
       }
 
       console.log(`[Hetzner] Uploading new SSH key: ${name}`);
