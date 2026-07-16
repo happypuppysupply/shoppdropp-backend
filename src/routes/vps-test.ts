@@ -1,11 +1,42 @@
 import { Router, Request, Response } from 'express';
 import { authenticate } from '../middleware/auth';
 import { HetznerService } from '../services/hetznerService';
+
+const router = Router();
+
+// Public health/test endpoint
+router.get('/hetzner-health', async (req: Request, res: Response) => {
+  try {
+    const hetznerToken = process.env.HETZNER_API_TOKEN;
+    
+    if (!hetznerToken) {
+      return res.status(500).json({ 
+        status: 'error', 
+        message: 'HETZNER_API_TOKEN not configured' 
+      });
+    }
+    
+    const hetzner = new HetznerService(hetznerToken);
+    const servers = await hetzner.listServers();
+    
+    res.json({
+      status: 'ok',
+      message: 'Hetzner API is working',
+      serverCount: servers.length
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      status: 'error',
+      message: error.message,
+      fullError: error.toString()
+    });
+  }
+});
 import { VPSProvisioner } from '../services/vpsProvisioner';
 import { db } from '../db/supabase';
 import { v4 as uuidv4 } from 'uuid';
 
-const router = Router();
+
 
 // Test Hetzner API directly (synchronous, with full error details)
 router.post('/test-provision', authenticate, async (req: Request, res: Response) => {
