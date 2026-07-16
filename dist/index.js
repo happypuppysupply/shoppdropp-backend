@@ -56,7 +56,7 @@ app.use('/api/hetzner', hetzner_types_1.default);
 app.use('/api/debug', debug_1.default);
 // Initialize Hetzner service if token is available
 if (process.env.HETZNER_API_TOKEN) {
-    (0, hetznerService_1.initHetznerService)(process.env.HETZNER_API_TOKEN);
+    (0, hetznerService_1.initHetznerService)();
     console.log('☁️ Hetzner service initialized');
 }
 else {

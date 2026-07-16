@@ -2,10 +2,9 @@ import axios, { AxiosInstance } from 'axios';
 
 export interface HetznerServerConfig {
   name: string;
-  server_type: string; // 'cx21', 'cx31', etc
-  image: string; // 'ubuntu-22.04'
-  location?: string; // 'nbg1', 'fsn1', 'hel1', 'ash'
-  ssh_keys?: string[];
+  server_type: string;
+  image: string;
+  location?: string;
   labels?: Record<string, string>;
 }
 
@@ -51,25 +50,73 @@ export class HetznerService {
     });
   }
 
+  // Upload or get existing SSH key
+  async uploadSSHKey(name: string, publicKey: string): Promise<number> {
+    try {
+      const fingerprint = await this.getKeyFingerprint(publicKey);
+      const keys = await this.listSSHKeys();
+      const existing = keys.find(k => k.fingerprint === fingerprint);
+      if (existing) {
+        console.log(`[Hetzner] Using existing SSH key: ${existing.id}`);
+        return existing.id;
+      }
+
+      console.log(`[Hetzner] Uploading new SSH key: ${name}`);
+      const response = await this.client.post('/ssh_keys', {
+        name,
+        public_key: publicKey,
+      });
+      console.log(`[Hetzner] SSH key uploaded: ${response.data.ssh_key.id}`);
+      return response.data.ssh_key.id;
+    } catch (error: any) {
+      console.error('[Hetzner] SSH key upload error:', error.response?.data || error.message);
+      throw new Error(`Failed to upload SSH key: ${error.response?.data?.error?.message || error.message}`);
+    }
+  }
+
+  // List all SSH keys
+  async listSSHKeys(): Promise<SSHKey[]> {
+    try {
+      const response = await this.client.get('/ssh_keys');
+      return response.data.ssh_keys || [];
+    } catch (error: any) {
+      console.error('[Hetzner] List SSH keys error:', error.response?.data || error.message);
+      return [];
+    }
+  }
+
+  // Get key fingerprint
+  private async getKeyFingerprint(publicKey: string): Promise<string> {
+    const parts = publicKey.trim().split(' ');
+    if (parts.length >= 2) {
+      return parts[1].substring(0, 16);
+    }
+    return '';
+  }
+
   // Create a new server
-  async createServer(config: HetznerServerConfig): Promise<HetznerServer> {
+  async createServer(config: HetznerServerConfig, sshKeyId?: number): Promise<HetznerServer> {
     console.log('[Hetzner] Creating server:', config.name, 'type:', config.server_type, 'location:', config.location);
     try {
       console.log('[Hetzner] Sending POST /servers...');
-      const response = await this.client.post('/servers', {
+      const requestBody: any = {
         name: config.name,
         server_type: config.server_type,
         image: config.image,
         location: config.location || 'nbg1',
-        ssh_keys: config.ssh_keys,
         labels: {
           ...config.labels,
           'app': 'shoppdropp',
           'managed_by': 'shoppdropp-backend',
         },
-      });
-      console.log('[Hetzner] Server created successfully:', response.data.server?.id);
+      };
+      
+      if (sshKeyId) {
+        requestBody.ssh_keys = [sshKeyId];
+      }
 
+      const response = await this.client.post('/servers', requestBody);
+      console.log('[Hetzner] Server created successfully:', response.data.server?.id);
       return response.data.server;
     } catch (error: any) {
       console.error('[Hetzner] Create server error:', error.response?.status, error.response?.data || error.message);
@@ -83,19 +130,8 @@ export class HetznerService {
       const response = await this.client.get(`/servers/${serverId}`);
       return response.data.server;
     } catch (error: any) {
-      console.error('Hetzner get server error:', error.response?.data || error.message);
+      console.error('[Hetzner] Get server error:', error.response?.data || error.message);
       throw new Error(`Failed to get server: ${error.response?.data?.error?.message || error.message}`);
-    }
-  }
-
-  // List all servers
-  async listServers(): Promise<HetznerServer[]> {
-    try {
-      const response = await this.client.get('/servers');
-      return response.data.servers || [];
-    } catch (error: any) {
-      console.error('Hetzner list servers error:', error.response?.data || error.message);
-      throw new Error(`Failed to list servers: ${error.response?.data?.error?.message || error.message}`);
     }
   }
 
@@ -104,7 +140,7 @@ export class HetznerService {
     try {
       await this.client.delete(`/servers/${serverId}`);
     } catch (error: any) {
-      console.error('Hetzner delete server error:', error.response?.data || error.message);
+      console.error('[Hetzner] Delete server error:', error.response?.data || error.message);
       throw new Error(`Failed to delete server: ${error.response?.data?.error?.message || error.message}`);
     }
   }
@@ -114,7 +150,7 @@ export class HetznerService {
     try {
       await this.client.post(`/servers/${serverId}/actions/poweron`);
     } catch (error: any) {
-      console.error('Hetzner power on error:', error.response?.data || error.message);
+      console.error('[Hetzner] Power on error:', error.response?.data || error.message);
       throw new Error(`Failed to power on: ${error.response?.data?.error?.message || error.message}`);
     }
   }
@@ -123,7 +159,7 @@ export class HetznerService {
     try {
       await this.client.post(`/servers/${serverId}/actions/poweroff`);
     } catch (error: any) {
-      console.error('Hetzner power off error:', error.response?.data || error.message);
+      console.error('[Hetzner] Power off error:', error.response?.data || error.message);
       throw new Error(`Failed to power off: ${error.response?.data?.error?.message || error.message}`);
     }
   }
@@ -132,61 +168,24 @@ export class HetznerService {
     try {
       await this.client.post(`/servers/${serverId}/actions/reboot`);
     } catch (error: any) {
-      console.error('Hetzner reboot error:', error.response?.data || error.message);
+      console.error('[Hetzner] Reboot error:', error.response?.data || error.message);
       throw new Error(`Failed to reboot: ${error.response?.data?.error?.message || error.message}`);
     }
   }
 
-  // Get metrics
-  async getServerMetrics(serverId: number, type: 'cpu' | 'disk' | 'network', start: string, end: string): Promise<any> {
-    try {
-      const response = await this.client.get(`/servers/${serverId}/metrics`, {
-        params: {
-          type,
-          start,
-          end,
-        },
-      });
-      return response.data;
-    } catch (error: any) {
-      console.error('Hetzner metrics error:', error.response?.data || error.message);
-      throw new Error(`Failed to get metrics: ${error.response?.data?.error?.message || error.message}`);
-    }
-  }
-
-  // SSH Key management
-  async listSSHKeys(): Promise<SSHKey[]> {
-    try {
-      const response = await this.client.get('/ssh_keys');
-      return response.data.ssh_keys;
-    } catch (error: any) {
-      console.error('Hetzner list SSH keys error:', error.response?.data || error.message);
-      throw new Error(`Failed to list SSH keys: ${error.response?.data?.error?.message || error.message}`);
-    }
-  }
-
-  async createSSHKey(name: string, publicKey: string): Promise<SSHKey> {
-    try {
-      const response = await this.client.post('/ssh_keys', {
-        name,
-        public_key: publicKey,
-      });
-      return response.data.ssh_key;
-    } catch (error: any) {
-      console.error('Hetzner create SSH key error:', error.response?.data || error.message);
-      throw new Error(`Failed to create SSH key: ${error.response?.data?.error?.message || error.message}`);
-    }
-  }
-
   // Wait for server to be ready
-  async waitForServerReady(serverId: number, timeout: number = 120000): Promise<HetznerServer> {
+  async waitForServerReady(serverId: number, timeoutMs: number = 120000): Promise<HetznerServer> {
     const startTime = Date.now();
     
-    while (Date.now() - startTime < timeout) {
+    while (Date.now() - startTime < timeoutMs) {
       const server = await this.getServer(serverId);
       
       if (server.status === 'running') {
         return server;
+      }
+      
+      if (['off', 'deleting'].includes(server.status)) {
+        throw new Error(`Server entered unexpected state: ${server.status}`);
       }
       
       // Wait 5 seconds before checking again
@@ -196,13 +195,37 @@ export class HetznerService {
     throw new Error(`Timeout waiting for server ${serverId} to be ready`);
   }
 
-  // Get available server types
+  // Get metrics
+  async getServerMetrics(serverId: number, type: 'cpu' | 'disk' | 'network', start: string, end: string): Promise<any> {
+    try {
+      const response = await this.client.get(`/servers/${serverId}/metrics`, {
+        params: { type, start, end },
+      });
+      return response.data.metrics;
+    } catch (error: any) {
+      console.error('[Hetzner] Metrics error:', error.response?.data || error.message);
+      throw new Error(`Failed to get metrics: ${error.response?.data?.error?.message || error.message}`);
+    }
+  }
+
+  // List all servers
+  async listServers(): Promise<HetznerServer[]> {
+    try {
+      const response = await this.client.get('/servers');
+      return response.data.servers || [];
+    } catch (error: any) {
+      console.error('[Hetzner] List servers error:', error.response?.data || error.message);
+      throw new Error(`Failed to list servers: ${error.response?.data?.error?.message || error.message}`);
+    }
+  }
+
+  // List available server types
   async listServerTypes(): Promise<any[]> {
     try {
       const response = await this.client.get('/server_types');
       return response.data.server_types;
     } catch (error: any) {
-      console.error('Hetzner list server types error:', error.response?.data || error.message);
+      console.error('[Hetzner] List server types error:', error.response?.data || error.message);
       throw new Error(`Failed to list server types: ${error.response?.data?.error?.message || error.message}`);
     }
   }
@@ -213,7 +236,7 @@ export class HetznerService {
       const response = await this.client.get('/locations');
       return response.data.locations;
     } catch (error: any) {
-      console.error('Hetzner list locations error:', error.response?.data || error.message);
+      console.error('[Hetzner] List locations error:', error.response?.data || error.message);
       throw new Error(`Failed to list locations: ${error.response?.data?.error?.message || error.message}`);
     }
   }
@@ -233,7 +256,12 @@ export function getHetznerService(): HetznerService {
   return hetznerService;
 }
 
-export function initHetznerService(token: string): HetznerService {
-  hetznerService = new HetznerService(token);
-  return hetznerService;
+export function initHetznerService(): void {
+  const token = process.env.HETZNER_API_TOKEN;
+  if (token) {
+    hetznerService = new HetznerService(token);
+    console.log('Hetzner service initialized');
+  } else {
+    console.warn('HETZNER_API_TOKEN not set, Hetzner service not initialized');
+  }
 }

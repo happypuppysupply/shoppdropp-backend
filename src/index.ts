@@ -58,7 +58,7 @@ app.use('/api/debug', debugRoutes);
 
 // Initialize Hetzner service if token is available
 if (process.env.HETZNER_API_TOKEN) {
-  initHetznerService(process.env.HETZNER_API_TOKEN);
+  initHetznerService();
   console.log('☁️ Hetzner service initialized');
 } else {
   console.warn('⚠️ HETZNER_API_TOKEN not set - VPS provisioning disabled');

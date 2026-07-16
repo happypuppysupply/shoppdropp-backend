@@ -22,10 +22,13 @@ export class VPSProvisioner {
   private hetzner: HetznerService;
   private sshPrivateKey: string;
 
-  constructor(hetznerService: HetznerService, sshPrivateKey: string) {
+  constructor(hetznerService: HetznerService, sshPrivateKey: string, sshPublicKey?: string) {
     this.hetzner = hetznerService;
     this.sshPrivateKey = sshPrivateKey;
+    this.sshPublicKey = sshPublicKey || '';
   }
+
+  private sshPublicKey: string;
 
   async provisionVPS(config: VPSConfig): Promise<ProvisioningResult> {
     const serverName = `shoppdropp-worker-${config.workerId.slice(0, 8)}`;
@@ -45,8 +48,15 @@ export class VPSProvisioner {
         },
       };
 
+      // Upload SSH key to Hetzner if we have a public key
+      let sshKeyId: number | undefined;
+      if (this.sshPublicKey) {
+        console.log(`[VPS] Uploading SSH key to Hetzner...`);
+        sshKeyId = await this.hetzner.uploadSSHKey(`shoppdropp-${config.workerId.slice(0, 8)}`, this.sshPublicKey);
+      }
+
       console.log(`[VPS] Calling hetzner.createServer...`);
-      const server = await this.hetzner.createServer(serverConfig);
+      const server = await this.hetzner.createServer(serverConfig, sshKeyId);
       console.log(`[VPS] Server created: ${server.id}, waiting for ready...`);
 
       // Step 2: Wait for server to be ready
@@ -290,6 +300,7 @@ WantedBy=multi-user.target
 export function createVPSProvisioner(): VPSProvisioner {
   const hetznerToken = process.env.HETZNER_API_TOKEN;
   const sshPrivateKey = process.env.SSH_PRIVATE_KEY;
+  const sshPublicKey = process.env.SSH_PUBLIC_KEY;
 
   if (!hetznerToken) {
     throw new Error('HETZNER_API_TOKEN not configured');
@@ -299,5 +310,5 @@ export function createVPSProvisioner(): VPSProvisioner {
   }
 
   const hetznerService = new HetznerService(hetznerToken);
-  return new VPSProvisioner(hetznerService, sshPrivateKey);
+  return new VPSProvisioner(hetznerService, sshPrivateKey, sshPublicKey);
 }
