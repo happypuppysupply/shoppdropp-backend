@@ -50,12 +50,10 @@ export class VPSProvisioner {
         },
       };
 
-      // Upload SSH key to Hetzner if we have a public key
-      let sshKeyId: number | undefined;
-      if (this.sshPublicKey) {
-        console.log(`[VPS] Uploading SSH key to Hetzner...`);
-        sshKeyId = await this.hetzner.uploadSSHKey(`shoppdropp-${config.workerId.slice(0, 8)}`, this.sshPublicKey);
-      }
+      // Use existing 'render' SSH key from Hetzner (ID: 115169010)
+      // This ensures the key matches our private key
+      const sshKeyId = 115169010;
+      console.log(`[VPS] Using existing SSH key: ${sshKeyId}`);
 
       console.log(`[VPS] Calling hetzner.createServer...`);
       const server = await this.hetzner.createServer(serverConfig, sshKeyId);
