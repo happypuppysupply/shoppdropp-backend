@@ -37,6 +37,7 @@ export class VPSProvisioner {
         name: serverName,
         server_type: 'cpx12', // 1 vCPU x86, 2GB RAM, 40GB NVMe
         image: 'ubuntu-22.04',
+        location: 'nbg1',
         labels: {
           worker_id: config.workerId,
           store_id: config.storeId,
