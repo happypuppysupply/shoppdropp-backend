@@ -136,12 +136,14 @@ export class VPSProvisioner {
       console.log(`[SSH] Connecting to ${ipAddress}...`);
       await this.logStep(config.workerId, 2, 'Install Dependencies', 10, 'Connecting via SSH...');
       
-      // Connect via SSH
+      // Connect via SSH (with host key check disabled for cloud instances)
       await ssh.connect({
         host: ipAddress,
         username: 'root',
         privateKey: this.sshPrivateKey,
-        readyTimeout: 120000,
+        readyTimeout: 60000,
+        tryKeyboard: false,
+        keepaliveInterval: 5000,
       });
 
       console.log(`[SSH] Connected to ${ipAddress}`);
