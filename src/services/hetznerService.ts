@@ -85,6 +85,17 @@ export class HetznerService {
     }
   }
 
+  // List all servers
+  async listServers(): Promise<HetznerServer[]> {
+    try {
+      const response = await this.client.get('/servers');
+      return response.data.servers || [];
+    } catch (error: any) {
+      console.error('Hetzner list servers error:', error.response?.data || error.message);
+      throw new Error(`Failed to list servers: ${error.response?.data?.error?.message || error.message}`);
+    }
+  }
+
   // Delete a server
   async deleteServer(serverId: number): Promise<void> {
     try {
