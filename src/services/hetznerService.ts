@@ -60,7 +60,7 @@ export class HetznerService {
         name: config.name,
         server_type: config.server_type,
         image: config.image,
-        location: config.location || 'fsn1',
+        location: config.location || 'hil',
         ssh_keys: config.ssh_keys,
         labels: {
           ...config.labels,

@@ -36,6 +36,7 @@ export class VPSProvisioner {
       const serverConfig: HetznerServerConfig = {
         name: serverName,
         server_type: 'cax11', // 2 vCPU ARM, 4GB RAM, 40GB NVMe
+        location: 'hil', // Hillsboro, OR (US-West)
         image: 'ubuntu-22.04',
         labels: {
           worker_id: config.workerId,
