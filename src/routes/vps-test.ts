@@ -32,6 +32,57 @@ router.get('/hetzner-health', async (req: Request, res: Response) => {
     });
   }
 });
+
+// Public test: Try to create a server
+router.post('/create-test-server', async (req: Request, res: Response) => {
+  const logs: string[] = [];
+  const log = (msg: string) => {
+    console.log(msg);
+    logs.push(msg);
+  };
+
+  try {
+    log('Starting test server creation...');
+    
+    const hetznerToken = process.env.HETZNER_API_TOKEN;
+    if (!hetznerToken) {
+      return res.status(500).json({ error: 'HETZNER_API_TOKEN not set', logs });
+    }
+
+    log('Creating HetznerService...');
+    const hetzner = new HetznerService(hetznerToken);
+
+    const testName = `debug-${Date.now()}`;
+    log(`Creating server: ${testName}...`);
+    
+    const server = await hetzner.createServer({
+      name: testName,
+      server_type: 'cx21',
+      image: 'ubuntu-22.04',
+      location: 'nbg1',
+      labels: { debug: 'true' }
+    });
+
+    log(`Server created! ID: ${server.id}`);
+    log(`Server status: ${server.status}`);
+    log(`Server IP: ${server.public_net?.ipv4?.ip || 'pending'}`);
+
+    // Delete immediately
+    log('Deleting test server...');
+    await hetzner.deleteServer(server.id);
+    log('Server deleted.');
+
+    res.json({ success: true, logs });
+
+  } catch (error: any) {
+    log(`ERROR: ${error.message}`);
+    res.status(500).json({ 
+      error: error.message, 
+      stack: error.stack,
+      logs 
+    });
+  }
+});
 import { VPSProvisioner } from '../services/vpsProvisioner';
 import { db } from '../db/supabase';
 import { v4 as uuidv4 } from 'uuid';
