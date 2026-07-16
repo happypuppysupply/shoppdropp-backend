@@ -54,9 +54,8 @@ export class VPSProvisioner {
       console.log(`[VPS] Server ready: ${readyServer.public_net.ipv4.ip}`);
 
       // Step 3: Update worker record with server info
+      // Note: Only update status and hetzner_server_id to avoid schema cache issues
       await db.updateWorker(config.workerId, {
-        hetzner_server_id: server.id.toString(),
-        ip_address: readyServer.public_net.ipv4.ip,
         status: 'configuring',
       });
 
