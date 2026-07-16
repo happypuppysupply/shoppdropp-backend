@@ -39,6 +39,11 @@ export interface Worker {
     ssh_key_fingerprint?: string | null;
     openclaw_version?: string | null;
     last_heartbeat?: string;
+    provisioning_step?: number | null;
+    provisioning_step_name?: string | null;
+    provisioning_progress?: number | null;
+    provisioning_logs?: string | null;
+    server_ip?: string | null;
     created_at: string;
     updated_at: string;
 }
