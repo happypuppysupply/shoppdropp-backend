@@ -119,57 +119,62 @@ export class VPSProvisioner {
       console.log(`[SSH] Connected to ${ipAddress}`);
 
       // Step 1: Update system and install dependencies
-      console.log(`[SSH] Updating system...`);
+      console.log(`[SSH] Step 1/9: Updating system...`);
       await this.runCommand(ssh, 'apt-get update && apt-get upgrade -y');
+      console.log(`[SSH] Step 1a: Installing tools...`);
       await this.runCommand(ssh, 'apt-get install -y curl wget git unzip jq');
 
       // Step 2: Install Node.js 20
-      console.log(`[SSH] Installing Node.js...`);
+      console.log(`[SSH] Step 2/9: Installing Node.js...`);
       await this.runCommand(ssh, 'curl -fsSL https://deb.nodesource.com/setup_20.x | bash -');
+      console.log(`[SSH] Step 2a: Installing nodejs package...`);
       await this.runCommand(ssh, 'apt-get install -y nodejs');
 
       // Step 3: Create openclaw user
-      console.log(`[SSH] Creating openclaw user...`);
+      console.log(`[SSH] Step 3/9: Creating openclaw user...`);
       await this.runCommand(ssh, 'useradd -m -s /bin/bash openclaw || true');
       await this.runCommand(ssh, 'usermod -aG sudo openclaw');
 
       // Step 4: Create app directory
+      console.log(`[SSH] Step 4/9: Creating app directory...`);
       await this.runCommand(ssh, 'mkdir -p /opt/openclaw');
       await this.runCommand(ssh, 'chown openclaw:openclaw /opt/openclaw');
 
       // Step 5: Download and install OpenClaw
-      console.log(`[SSH] Downloading OpenClaw...`);
+      console.log(`[SSH] Step 5/9: Downloading OpenClaw...`);
       const openclawVersion = process.env.OPENCLAW_VERSION || 'latest';
       const downloadUrl = openclawVersion === 'latest' 
         ? 'https://github.com/openclaw/openclaw/releases/latest/download/openclaw-linux-x64.tar.gz'
         : `https://github.com/openclaw/openclaw/releases/download/${openclawVersion}/openclaw-linux-x64.tar.gz`;
       
+      console.log(`[SSH] Downloading from: ${downloadUrl}`);
       await this.runCommand(ssh, `cd /opt/openclaw && curl -L -o openclaw.tar.gz "${downloadUrl}"`);
+      console.log(`[SSH] Extracting OpenClaw...`);
       await this.runCommand(ssh, 'cd /opt/openclaw && tar -xzf openclaw.tar.gz && rm openclaw.tar.gz');
       await this.runCommand(ssh, 'chmod +x /opt/openclaw/openclaw');
 
       // Step 6: Create .env file with all configuration
-      console.log(`[SSH] Configuring environment...`);
+      console.log(`[SSH] Step 6/9: Configuring environment...`);
       const envContent = this.buildEnvFile(config);
       await this.runCommand(ssh, `cat > /opt/openclaw/.env << 'EOF'
 ${envContent}
 EOF`);
 
       // Step 7: Create systemd service
-      console.log(`[SSH] Creating systemd service...`);
+      console.log(`[SSH] Step 7/9: Creating systemd service...`);
       const serviceContent = this.buildSystemdService();
       await this.runCommand(ssh, `cat > /etc/systemd/system/openclaw.service << 'EOF'
 ${serviceContent}
 EOF`);
 
       // Step 8: Start OpenClaw service
-      console.log(`[SSH] Starting OpenClaw service...`);
+      console.log(`[SSH] Step 8/9: Starting OpenClaw service...`);
       await this.runCommand(ssh, 'systemctl daemon-reload');
       await this.runCommand(ssh, 'systemctl enable openclaw');
       await this.runCommand(ssh, 'systemctl start openclaw');
 
       // Step 9: Verify service is running
-      console.log(`[SSH] Verifying service...`);
+      console.log(`[SSH] Step 9/9: Verifying service...`);
       await new Promise(resolve => setTimeout(resolve, 5000));
       const statusResult = await ssh.execCommand('systemctl is-active openclaw');
       
