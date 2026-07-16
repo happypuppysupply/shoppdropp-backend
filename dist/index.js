@@ -22,6 +22,7 @@ const vps_simple_1 = __importDefault(require("./routes/vps-simple"));
 const vps_debug_1 = __importDefault(require("./routes/vps-debug"));
 const vps_test_1 = __importDefault(require("./routes/vps-test"));
 const vps_retry_1 = __importDefault(require("./routes/vps-retry"));
+const vps_sync_test_1 = __importDefault(require("./routes/vps-sync-test"));
 const hetzner_types_1 = __importDefault(require("./routes/hetzner-types"));
 const debug_1 = __importDefault(require("./routes/debug"));
 // Services
@@ -50,6 +51,7 @@ app.use('/api/vps-simple', vps_simple_1.default);
 app.use('/api/vps-debug', vps_debug_1.default);
 app.use('/api/vps-test', vps_test_1.default);
 app.use('/api/vps-retry', vps_retry_1.default);
+app.use('/api/vps-sync-test', vps_sync_test_1.default);
 app.use('/api/hetzner', hetzner_types_1.default);
 app.use('/api/debug', debug_1.default);
 // Initialize Hetzner service if token is available

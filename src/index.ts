@@ -18,6 +18,7 @@ import vpsSimpleRoutes from './routes/vps-simple';
 import vpsDebugRoutes from './routes/vps-debug';
 import vpsTestRoutes from './routes/vps-test';
 import vpsRetryRoutes from './routes/vps-retry';
+import vpsSyncTestRoutes from './routes/vps-sync-test';
 import hetznerTypesRoutes from './routes/hetzner-types';
 import debugRoutes from './routes/debug';
 
@@ -51,6 +52,7 @@ app.use('/api/vps-simple', vpsSimpleRoutes);
 app.use('/api/vps-debug', vpsDebugRoutes);
 app.use('/api/vps-test', vpsTestRoutes);
 app.use('/api/vps-retry', vpsRetryRoutes);
+app.use('/api/vps-sync-test', vpsSyncTestRoutes);
 app.use('/api/hetzner', hetznerTypesRoutes);
 app.use('/api/debug', debugRoutes);
 
