@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { authenticate } from '../middleware/auth';
-import { db } from '../db/supabase';
+import { db, supabase } from '../db/supabase';
 import axios from 'axios';
 import { createVPSProvisioner } from '../services/vpsProvisioner';
 import { getWorkerCommandQueue, WORKER_TASKS } from '../services/workerCommands';
@@ -60,7 +60,7 @@ You have access to the following capabilities:
 When the user wants to provision, destroy, reboot, or check status, YOU MUST return a JSON command block BEFORE your text response.
 
 Available commands:
-- "provision" - Create a new VPS and install OpenClaw (if no worker exists or worker is idle)
+- "provision" - Create a new VPS and install OpenClaw
 - "destroy" - Remove the VPS
 - "reboot" - Restart the VPS
 - "status" - Check VPS status and metrics
@@ -75,26 +75,20 @@ Available commands:
 - content_generation - Generate blog posts, emails, social content
 
 ## CRITICAL: Command Format
-You MUST respond with a JSON command FIRST, then your text response. Example:
+You MUST respond with a JSON command FIRST, then your text response. Use this exact format:
 
-\`\`\`json
+[[COMMAND]]
 {"action": "worker_command", "command": "status", "worker_id": "WORKER_ID"}
-\`\`\`
-Provisioning status check initiated. Let me get the current state...
+[[/COMMAND]]
+Provisioning status check initiated...
 
-Or for provisioning (this is what you do when user says "provision a vps"):
-\`\`\`json
+Or for provisioning (when user says "provision a vps"):
+[[COMMAND]]
 {"action": "worker_command", "command": "provision", "store_id": "STORE_ID"}
-\`\`\`
+[[/COMMAND]]
 Provisioning a new VPS for you now...
 
-Or for tasks:
-\`\`\`json
-{"action": "run_task", "task": "product_research", "worker_id": "WORKER_ID", "params": {"niche": "pet supplies"}}
-\`\`\`
-Running product research task...
-
-Always include the JSON command block when the user wants to take action. NEVER just describe what you would do - actually send the command.
+Always include the JSON command block when the user wants to take action.`;
 
 // Chat endpoint
 router.post('/chat', authenticate, async (req: Request, res: Response) => {
@@ -142,23 +136,24 @@ router.post('/chat', authenticate, async (req: Request, res: Response) => {
     // Call OpenRouter
     const aiResponse = await callOpenRouter(messages, aiConfig.api_key_encrypted, aiConfig.model);
 
-    // Parse for commands
+    // Parse for commands (using [[COMMAND]] format)
     let commandResult = null;
-    const jsonMatch = aiResponse.content.match(/```json\s*({.*?})\s*```/s);
+    const commandMatch = aiResponse.content.match(/\[\[COMMAND\]\]\s*(\{.*?\})\s*\[\[\/COMMAND\]\]/s);
     
-    if (jsonMatch) {
+    if (commandMatch) {
       try {
-        const command = JSON.parse(jsonMatch[1]);
+        const command = JSON.parse(commandMatch[1]);
+        console.log('Parsed command:', command);
         
         // Execute the command
-        if (command.action === 'worker_command' && activeWorker) {
-          commandResult = await executeWorkerCommand(command, activeWorker, user.id);
+        if (command.action === 'worker_command') {
+          commandResult = await executeWorkerCommand(command, activeWorker, user.id, activeStore);
         } else if (command.action === 'run_task' && activeWorker) {
           commandResult = await executeTask(command, activeWorker, user.id);
         }
         
-        // Remove the JSON block from the response shown to user
-        aiResponse.content = aiResponse.content.replace(/```json\s*{.*?}\s*```\s*/s, '').trim();
+        // Remove the command block from the response shown to user
+        aiResponse.content = aiResponse.content.replace(/\[\[COMMAND\]\]\s*\{.*?\}\s*\[\[\/COMMAND\]\]\s*/s, '').trim();
       } catch (e) {
         console.error('Failed to parse command:', e);
       }
@@ -178,13 +173,13 @@ router.post('/chat', authenticate, async (req: Request, res: Response) => {
 });
 
 // Execute worker commands
-async function executeWorkerCommand(command: any, worker: any, userId: string) {
-  const { command: cmd, worker_id } = command;
+async function executeWorkerCommand(command: any, worker: any, userId: string, store: any) {
+  const { command: cmd, worker_id, store_id } = command;
   
   try {
     switch (cmd) {
       case 'status':
-        if (!worker.hetzner_server_id) {
+        if (!worker || !worker.hetzner_server_id) {
           return { status: 'error', message: 'VPS not provisioned yet' };
         }
         const hetzner = (await import('../services/hetznerService')).getHetznerService();
@@ -201,39 +196,61 @@ async function executeWorkerCommand(command: any, worker: any, userId: string) {
         };
         
       case 'provision':
-        if (worker.status === 'running' || worker.status === 'configuring' || worker.status === 'provisioning') {
+        // Find or create a worker for this store
+        let targetWorker = worker;
+        if (!targetWorker) {
+          // Create a new worker
+          const { data: newWorker, error } = await supabase
+            .from('workers')
+            .insert({
+              user_id: userId,
+              store_id: store?.id,
+              status: 'provisioning',
+            })
+            .select()
+            .single();
+          if (error) throw new Error('Failed to create worker: ' + error.message);
+          targetWorker = newWorker;
+        }
+        
+        if (targetWorker.status === 'running' || targetWorker.status === 'configuring' || targetWorker.status === 'provisioning') {
           return { status: 'error', message: 'Worker already provisioned or provisioning' };
         }
-        // Trigger provisioning - get store credentials first
-        const store = await db.getStoresByUser(userId).then(stores => stores[0]);
+        
+        // Trigger provisioning
         const provisioner = createVPSProvisioner();
         
         // Update worker status to provisioning
-        await db.updateWorker(worker.id, { status: 'provisioning' });
+        await db.updateWorker(targetWorker.id, { status: 'provisioning' });
         
         // Start provisioning asynchronously
-        provisioner.provisionVPS('happy-puppy-supply', 'nbg1', 'cx21')  // Could be configurable
+        provisioner.provisionVPS({
+          workerId: targetWorker.id,
+          storeId: store?.id || '',
+          userId: userId,
+          envVars: {}
+        })
           .then(async (result) => {
             console.log('Provisioning result:', result);
-            if (result.success) {
-              await db.updateWorker(worker.id, { 
+            if (result.status === 'success') {
+              await db.updateWorker(targetWorker.id, { 
                 status: 'configuring',
-                hetzner_server_id: result.serverId?.toString(),
-                ip_address: result.ip,
+                hetzner_server_id: result.serverId.toString(),
+                ip_address: result.ipAddress,
               });
             } else {
-              await db.updateWorker(worker.id, { status: 'error' });
+              await db.updateWorker(targetWorker.id, { status: 'error' });
             }
           })
           .catch(async (error) => {
             console.error('Provisioning failed:', error);
-            await db.updateWorker(worker.id, { status: 'error' });
+            await db.updateWorker(targetWorker.id, { status: 'error' });
           });
         
         return { status: 'in_progress', message: 'VPS provisioning started. This will take 2-3 minutes. The worker status will update automatically.' };
         
       case 'reboot':
-        if (!worker.hetzner_server_id) {
+        if (!worker || !worker.hetzner_server_id) {
           return { status: 'error', message: 'VPS not provisioned' };
         }
         const hetznerReboot = (await import('../services/hetznerService')).getHetznerService();
@@ -241,7 +258,7 @@ async function executeWorkerCommand(command: any, worker: any, userId: string) {
         return { status: 'success', message: 'VPS reboot initiated' };
         
       case 'destroy':
-        if (!worker.hetzner_server_id) {
+        if (!worker || !worker.hetzner_server_id) {
           return { status: 'error', message: 'VPS not provisioned' };
         }
         const provisionerDestroy = createVPSProvisioner();
