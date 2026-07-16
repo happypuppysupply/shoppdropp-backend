@@ -75,9 +75,10 @@ export class VPSProvisioner {
         status: 'configuring',
       });
 
-      // Step 4: Wait a bit more for SSH to be available
-      console.log(`[VPS] Waiting for SSH...`);
-      await new Promise(resolve => setTimeout(resolve, 30000));
+      // Step 4: Wait for SSH to be available (needs ~60-90 seconds for SSH to be ready)
+      console.log(`[VPS] Waiting for SSH to be available (90 seconds)...`);
+      await this.logStep(config.workerId, 1, 'Initialize VPS', 90, 'Waiting for SSH service to start...');
+      await new Promise(resolve => setTimeout(resolve, 90000));
 
       // Step 5: Install OpenClaw via SSH
       console.log(`[VPS] Installing OpenClaw...`);
