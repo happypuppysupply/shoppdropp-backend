@@ -57,12 +57,14 @@ You have access to the following capabilities:
 - Optimize campaigns based on performance
 
 ## VPS Worker Control
-You can control the VPS worker with these commands:
-- "provisioning" - Create a new VPS and install OpenClaw
+When the user wants to provision, destroy, reboot, or check status, YOU MUST return a JSON command block BEFORE your text response.
+
+Available commands:
+- "provision" - Create a new VPS and install OpenClaw (if no worker exists or worker is idle)
 - "destroy" - Remove the VPS
 - "reboot" - Restart the VPS
 - "status" - Check VPS status and metrics
-- "run task [task_name]" - Execute a specific task on the worker
+- "run_task" - Execute a specific task on the worker
 
 ## Available Tasks
 - product_research - Find trending products
@@ -72,18 +74,27 @@ You can control the VPS worker with these commands:
 - meta_ads_create - Create new ad campaigns
 - content_generation - Generate blog posts, emails, social content
 
-When you want to execute a command, respond with a JSON block like this (before your natural language response):
+## CRITICAL: Command Format
+You MUST respond with a JSON command FIRST, then your text response. Example:
 
 \`\`\`json
 {"action": "worker_command", "command": "status", "worker_id": "WORKER_ID"}
 \`\`\`
+Provisioning status check initiated. Let me get the current state...
+
+Or for provisioning (this is what you do when user says "provision a vps"):
+\`\`\`json
+{"action": "worker_command", "command": "provision", "store_id": "STORE_ID"}
+\`\`\`
+Provisioning a new VPS for you now...
 
 Or for tasks:
 \`\`\`json
 {"action": "run_task", "task": "product_research", "worker_id": "WORKER_ID", "params": {"niche": "pet supplies"}}
 \`\`\`
+Running product research task...
 
-Always be helpful, concise, and action-oriented. If you need more information, ask for it.`;
+Always include the JSON command block when the user wants to take action. NEVER just describe what you would do - actually send the command.
 
 // Chat endpoint
 router.post('/chat', authenticate, async (req: Request, res: Response) => {
@@ -189,14 +200,37 @@ async function executeWorkerCommand(command: any, worker: any, userId: string) {
           }
         };
         
-      case 'provisioning':
-        if (worker.status === 'running' || worker.status === 'configuring') {
-          return { status: 'error', message: 'Worker already provisioned' };
+      case 'provision':
+        if (worker.status === 'running' || worker.status === 'configuring' || worker.status === 'provisioning') {
+          return { status: 'error', message: 'Worker already provisioned or provisioning' };
         }
-        // Trigger provisioning
+        // Trigger provisioning - get store credentials first
+        const store = await db.getStoresByUser(userId).then(stores => stores[0]);
         const provisioner = createVPSProvisioner();
-        // This happens async, return immediately
-        return { status: 'in_progress', message: 'VPS provisioning started' };
+        
+        // Update worker status to provisioning
+        await db.updateWorker(worker.id, { status: 'provisioning' });
+        
+        // Start provisioning asynchronously
+        provisioner.provisionVPS('happy-puppy-supply', 'nbg1', 'cx21')  // Could be configurable
+          .then(async (result) => {
+            console.log('Provisioning result:', result);
+            if (result.success) {
+              await db.updateWorker(worker.id, { 
+                status: 'configuring',
+                hetzner_server_id: result.serverId?.toString(),
+                ip_address: result.ip,
+              });
+            } else {
+              await db.updateWorker(worker.id, { status: 'error' });
+            }
+          })
+          .catch(async (error) => {
+            console.error('Provisioning failed:', error);
+            await db.updateWorker(worker.id, { status: 'error' });
+          });
+        
+        return { status: 'in_progress', message: 'VPS provisioning started. This will take 2-3 minutes. The worker status will update automatically.' };
         
       case 'reboot':
         if (!worker.hetzner_server_id) {
