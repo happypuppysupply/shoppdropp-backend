@@ -43,6 +43,8 @@ async function callOpenRouter(messages: any[], apiKey: string, model: string = '
 // System prompt for the AI agent
 const SYSTEM_PROMPT = `You are the ShoppDropp AI Agent, an autonomous dropshipping assistant. You help manage Shopify stores, automate tasks, and make decisions.
 
+IMPORTANT: When users ask about API keys or credentials, check the "Configured API Keys/Integrations" section in your context. If credentials are marked as "✅ Configured", confirm they are available. Do NOT say you don't have access to keys that are listed as configured.
+
 You have access to the following capabilities:
 
 ## Store Management
@@ -117,6 +119,12 @@ router.post('/chat', authenticate, async (req: Request, res: Response) => {
     const activeWorker = workers.find(w => w.status === 'running' || w.status === 'configuring');
     const activeStore = stores[0]; // Use first store for context
 
+    // Get credentials for the active store
+    let credentials: any[] = [];
+    if (activeStore) {
+      credentials = await db.getCredentialsByStore(activeStore.id);
+    }
+
     // Build context-enhanced system prompt
     let contextPrompt = SYSTEM_PROMPT;
     if (activeWorker) {
@@ -124,6 +132,16 @@ router.post('/chat', authenticate, async (req: Request, res: Response) => {
     }
     if (activeStore) {
       contextPrompt += `\n\n## Active Store\nName: ${activeStore.name}\nPlatform: ${activeStore.platform}\nStore ID: ${activeStore.id}`;
+    }
+    
+    // Add credentials info to context
+    if (credentials.length > 0) {
+      contextPrompt += `\n\n## Configured API Keys/Integrations\nThe following integrations have API credentials stored and are available for use:`;
+      for (const cred of credentials) {
+        const hasKeys = cred.api_key || cred.access_token || cred.refresh_token || cred.password;
+        contextPrompt += `\n- ${cred.service_type}: ${hasKeys ? '✅ Configured' : '❌ Not configured'}`;
+      }
+      contextPrompt += `\n\nWhen the user asks about API keys or integrations, you should confirm which ones are available based on this list.`;
     }
 
     // Build messages array
