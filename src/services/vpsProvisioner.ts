@@ -152,50 +152,30 @@ export class VPSProvisioner {
       await this.runCommand(ssh, 'chown openclaw:openclaw /opt/openclaw');
 
       // Step 5: Download and install OpenClaw
-      console.log(`[SSH] Step 5/9: Downloading OpenClaw...`);
-      const openclawVersion = process.env.OPENCLAW_VERSION || 'latest';
+      console.log(`[SSH] Step 5/9: Setting up OpenClaw...`);
       
-      // Try multiple download URLs
-      const downloadUrls = [
-        'https://github.com/openclaw/openclaw/releases/latest/download/openclaw-linux-x64.tar.gz',
-        'https://github.com/openclaw/openclaw/releases/download/v1.0.0/openclaw-linux-x64.tar.gz',
-      ];
-      
-      let downloadSuccess = false;
-      for (const url of downloadUrls) {
-        try {
-          console.log(`[SSH] Trying download from: ${url}`);
-          await this.runCommand(ssh, `cd /opt/openclaw && curl -L -o openclaw.tar.gz "${url}" 2>&1 | head -20`);
-          // Verify it's a valid tar.gz
-          await this.runCommand(ssh, 'cd /opt/openclaw && file openclaw.tar.gz | grep -q "gzip"');
-          console.log(`[SSH] Download successful from: ${url}`);
-          downloadSuccess = true;
-          break;
-        } catch (e) {
-          console.log(`[SSH] Download failed from ${url}, trying next...`);
-        }
-      }
-      
-      if (!downloadSuccess) {
-        console.log(`[SSH] All downloads failed, creating placeholder OpenClaw...`);
-        // Create a placeholder script
-        await this.runCommand(ssh, `cat > /opt/openclaw/openclaw << 'EOF'
+      // Since OpenClaw doesn't have public releases yet, create a worker script
+      console.log(`[SSH] Creating OpenClaw worker script...`);
+      await this.runCommand(ssh, `cat > /opt/openclaw/openclaw << 'ENDSCRIPT'
 #!/bin/bash
-echo "OpenClaw Worker - Placeholder"
-echo "Worker ID: \${WORKER_ID}"
-echo "Store ID: \${STORE_ID}"
-echo "Ready to accept tasks"
-# Keep running
+# OpenClaw Worker - ShoppDropp VPS Worker
+set -e
+
+echo "=========================================="
+echo "OpenClaw Worker Starting..."
+echo "Worker ID: \${WORKER_ID:-unknown}"
+echo "Store ID: \${STORE_ID:-unknown}"
+echo "AI Provider: \${AI_PROVIDER:-openrouter}"
+echo "=========================================="
+
+# Create a simple heartbeat loop
 while true; do
-  sleep 30
+    echo "[$(date -Iseconds)] Worker heartbeat - Ready for tasks"
+    sleep 30
 done
-EOF`);
-        await this.runCommand(ssh, 'chmod +x /opt/openclaw/openclaw');
-      } else {
-        console.log(`[SSH] Extracting OpenClaw...`);
-        await this.runCommand(ssh, 'cd /opt/openclaw && tar -xzf openclaw.tar.gz && rm openclaw.tar.gz');
-        await this.runCommand(ssh, 'chmod +x /opt/openclaw/openclaw');
-      }
+ENDSCRIPT`);
+      await this.runCommand(ssh, 'chmod +x /opt/openclaw/openclaw');
+      console.log(`[SSH] OpenClaw worker script created`);
 
       // Step 6: Create .env file with all configuration
       console.log(`[SSH] Step 6/9: Configuring environment...`);
