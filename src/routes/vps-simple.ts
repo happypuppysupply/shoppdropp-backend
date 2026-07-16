@@ -72,26 +72,34 @@ router.post('/create-and-provision', authenticate, async (req: Request, res: Res
       envVars.AI_API_KEY = aiConfig.api_key_encrypted || '';
     }
 
-    // Start async provisioning
-    console.log('[VPS] Starting provisionVPS with config:', { workerId, storeId: store.id, userId: user.id });
-    provisioner.provisionVPS({
-      workerId,
-      storeId: store.id,
-      userId: user.id,
-      envVars,
-    }).then(result => {
-      console.log('[VPS] Provisioning result:', result);
-      if (result.status === 'failed') {
-        console.error('[VPS] Provisioning failed:', result.error);
-        db.updateWorker(workerId, { status: 'error' }).catch(console.error);
-      } else {
-        console.log(`[VPS] Provisioning complete: ${result.ipAddress}`);
+    // Start async provisioning with proper error handling
+    (async () => {
+      try {
+        console.log('[VPS] Starting provisionVPS with config:', { workerId, storeId: store.id, userId: user.id });
+        const result = await provisioner.provisionVPS({
+          workerId,
+          storeId: store.id,
+          userId: user.id,
+          envVars,
+        });
+        console.log('[VPS] Provisioning result:', result);
+        if (result.status === 'failed') {
+          console.error('[VPS] Provisioning failed:', result.error);
+          await db.updateWorker(workerId, { status: 'error' });
+        } else {
+          console.log(`[VPS] Provisioning complete: ${result.ipAddress}`);
+        }
+      } catch (error: any) {
+        console.error('[VPS] CRITICAL ERROR in provisionVPS:', error);
+        console.error('[VPS] Error message:', error.message);
+        console.error('[VPS] Error stack:', error.stack);
+        try {
+          await db.updateWorker(workerId, { status: 'error' });
+        } catch (dbError) {
+          console.error('[VPS] Failed to update worker status:', dbError);
+        }
       }
-    }).catch(error => {
-      console.error('[VPS] Unexpected error in provisionVPS:', error);
-      console.error('[VPS] Error stack:', error.stack);
-      db.updateWorker(workerId, { status: 'error' }).catch(console.error);
-    });
+    })();
 
     console.log('Returning success response');
     res.json({
