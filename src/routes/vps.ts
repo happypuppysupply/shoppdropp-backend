@@ -278,4 +278,100 @@ router.get('/locations', authenticate, async (req: Request, res: Response) => {
   }
 });
 
+// Create worker and provision VPS in one call
+router.post('/create-and-provision', authenticate, async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user;
+    const { storeId } = req.body;
+
+    // Get user's store
+    const stores = await db.getStoresByUser(user.id);
+    const store = storeId 
+      ? stores.find(s => s.id === storeId)
+      : stores[0];
+
+    if (!store) {
+      return res.status(404).json({ error: 'No store found' });
+    }
+
+    // Create a new worker
+    const workerId = uuidv4();
+    await db.createWorker({
+      id: workerId,
+      user_id: user.id,
+      store_id: store.id,
+      status: 'provisioning',
+    });
+
+    // Update store with worker_id
+    await db.updateStore(store.id, { worker_id: workerId });
+
+    // Start provisioning
+    const provisioner = getProvisioner();
+    
+    // Get credentials
+    const credentials = await db.getCredentialsByStore(store.id);
+    const storeEnvVars: Record<string, string> = {};
+
+    for (const cred of credentials) {
+      try {
+        const data = JSON.parse(cred.encrypted_data);
+        switch (cred.type) {
+          case 'shopify':
+            storeEnvVars.SHOPIFY_STORE_URL = (store as any).url || '';
+            storeEnvVars.SHOPIFY_ACCESS_TOKEN = data.access_token || '';
+            break;
+          case 'cj_dropshipping':
+            storeEnvVars.CJ_DROPSHIPPING_API_KEY = data.api_key || '';
+            break;
+          case 'meta_ads':
+            storeEnvVars.META_ADS_ACCESS_TOKEN = data.access_token || '';
+            storeEnvVars.META_ADS_ACCOUNT_ID = data.account_id || '';
+            break;
+        }
+      } catch (e) {
+        console.warn(`Failed to parse credentials for ${cred.type}`);
+      }
+    }
+
+    // Get AI config
+    const aiConfig = await db.getAIConfig(user.id);
+    if (aiConfig) {
+      storeEnvVars.AI_PROVIDER = aiConfig.provider;
+      storeEnvVars.AI_MODEL = aiConfig.model;
+      storeEnvVars.AI_API_KEY = aiConfig.api_key_encrypted;
+    }
+
+    // Start async provisioning
+    provisioner.provisionVPS({
+      workerId,
+      storeId: store.id,
+      userId: user.id,
+      envVars: storeEnvVars,
+    }).then(result => {
+      if (result.status === 'failed') {
+        console.error(`[VPS] Provisioning failed:`, result.error);
+        db.updateWorker(workerId, { status: 'error' });
+      } else {
+        console.log(`[VPS] Provisioning complete: ${result.ipAddress}`);
+      }
+    }).catch(error => {
+      console.error(`[VPS] Unexpected error:`, error);
+      db.updateWorker(workerId, { status: 'error' });
+    });
+
+    res.json({
+      success: true,
+      message: 'Worker created and VPS provisioning started',
+      workerId,
+      storeId: store.id,
+      status: 'provisioning',
+    });
+
+  } catch (error: any) {
+    console.error('Create and provision error:', error);
+    res.status(500).json({ error: error.message || 'Failed to create worker and provision VPS' });
+  }
+});
+
 export default router;
