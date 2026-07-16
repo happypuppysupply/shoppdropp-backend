@@ -124,9 +124,17 @@ router.get('/status/:workerId', authenticate, async (req: Request, res: Response
   try {
     const user = (req as any).user;
     const { workerId } = req.params;
+    
+    console.log(`[VPS Status] Looking up worker: ${workerId}, user: ${user.id}`);
 
     const worker = await db.getWorkerById(workerId);
-    if (!worker || worker.user_id !== user.id) {
+    if (!worker) {
+      console.log(`[VPS Status] Worker not found: ${workerId}`);
+      return res.status(404).json({ error: 'Worker not found' });
+    }
+    
+    if (worker.user_id !== user.id) {
+      console.log(`[VPS Status] User mismatch. Worker user: ${worker.user_id}, Request user: ${user.id}`);
       return res.status(404).json({ error: 'Worker not found' });
     }
 
