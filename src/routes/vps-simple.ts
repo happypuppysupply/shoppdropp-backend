@@ -129,7 +129,7 @@ router.get('/status/:workerId', authenticate, async (req: Request, res: Response
 
     const worker = await db.getWorkerById(workerId);
     if (!worker) {
-      console.log(`[VPS Status] Worker not found: ${workerId}`);
+      console.log(`[VPS Status] Worker not found in DB: ${workerId}`);
       return res.status(404).json({ error: 'Worker not found' });
     }
     
@@ -138,8 +138,11 @@ router.get('/status/:workerId', authenticate, async (req: Request, res: Response
       return res.status(404).json({ error: 'Worker not found' });
     }
 
-    // If no Hetzner server ID, return basic status
+    console.log(`[VPS Status] Worker found: ${workerId}, status: ${worker.status}, hetzner_id: ${worker.hetzner_server_id || 'none'}`);
+
+    // If no Hetzner server ID, return basic status (worker exists but VPS not provisioned yet)
     if (!worker.hetzner_server_id) {
+      console.log(`[VPS Status] Worker has no Hetzner server yet, returning basic status`);
       return res.json({
         workerId,
         status: worker.status,
