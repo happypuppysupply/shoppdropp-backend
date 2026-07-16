@@ -53,7 +53,9 @@ export class HetznerService {
 
   // Create a new server
   async createServer(config: HetznerServerConfig): Promise<HetznerServer> {
+    console.log('[Hetzner] Creating server:', config.name, 'type:', config.server_type, 'location:', config.location);
     try {
+      console.log('[Hetzner] Sending POST /servers...');
       const response = await this.client.post('/servers', {
         name: config.name,
         server_type: config.server_type,
@@ -66,10 +68,11 @@ export class HetznerService {
           'managed_by': 'shoppdropp-backend',
         },
       });
+      console.log('[Hetzner] Server created successfully:', response.data.server?.id);
 
       return response.data.server;
     } catch (error: any) {
-      console.error('Hetzner create server error:', error.response?.data || error.message);
+      console.error('[Hetzner] Create server error:', error.response?.status, error.response?.data || error.message);
       throw new Error(`Failed to create server: ${error.response?.data?.error?.message || error.message}`);
     }
   }

@@ -32,7 +32,7 @@ export class VPSProvisioner {
     
     try {
       // Step 1: Create Hetzner server
-      console.log(`[VPS] Creating server ${serverName}...`);
+      console.log(`[VPS] Step 1: Creating server ${serverName}...`);
       const serverConfig: HetznerServerConfig = {
         name: serverName,
         server_type: 'cx21', // 2 vCPU, 4GB RAM, 40GB NVMe
@@ -45,6 +45,7 @@ export class VPSProvisioner {
         },
       };
 
+      console.log(`[VPS] Calling hetzner.createServer...`);
       const server = await this.hetzner.createServer(serverConfig);
       console.log(`[VPS] Server created: ${server.id}, waiting for ready...`);
 
