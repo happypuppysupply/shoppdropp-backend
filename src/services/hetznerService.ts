@@ -26,6 +26,7 @@ export interface HetznerServer {
   private_net: any[];
   created: string;
   labels: Record<string, string>;
+  ssh_keys?: number[];
 }
 
 export interface SSHKey {
@@ -122,6 +123,9 @@ export class HetznerService {
       
       if (sshKeyId) {
         requestBody.ssh_keys = [sshKeyId];
+        console.log('[Hetzner] Adding SSH key ID:', sshKeyId, 'to request');
+      } else {
+        console.log('[Hetzner] WARNING: No SSH key ID provided!');
       }
 
       const response = await this.client.post('/servers', requestBody);

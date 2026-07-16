@@ -55,9 +55,10 @@ export class VPSProvisioner {
       const sshKeyId = 115169010;
       console.log(`[VPS] Using existing SSH key: ${sshKeyId}`);
 
-      console.log(`[VPS] Calling hetzner.createServer...`);
+      console.log(`[VPS] Calling hetzner.createServer with sshKeyId=${sshKeyId}...`);
       const server = await this.hetzner.createServer(serverConfig, sshKeyId);
       console.log(`[VPS] Server created: ${server.id}, waiting for ready...`);
+      console.log(`[VPS] Server SSH keys: ${JSON.stringify(server.ssh_keys)}`);
       
       await this.logStep(config.workerId, 1, 'Initialize VPS', 50, `Server ${server.id} created, waiting for initialization...`);
 
