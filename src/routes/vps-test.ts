@@ -58,7 +58,7 @@ router.post('/create-test-server', async (req: Request, res: Response) => {
     const server = await hetzner.createServer({
       name: testName,
       server_type: 'cax11',
-      location: 'hil',
+      location: 'ash',
       image: 'ubuntu-22.04',
       labels: { debug: 'true' }
     });
