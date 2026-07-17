@@ -24,6 +24,7 @@ import hetznerTypesRoutes from './routes/hetzner-types';
 import debugRoutes from './routes/debug';
 import openWebNinjaRoutes from './routes/openwebninja';
 import storeConfigRoutes from './routes/store-config';
+import setupRoutes from './routes/setup';
 
 // Services
 import { WorkerManager } from './services/workerManager';
@@ -61,6 +62,7 @@ app.use('/api/hetzner', hetznerTypesRoutes);
 app.use('/api/debug', debugRoutes);
 app.use('/api/openwebninja', openWebNinjaRoutes);
 app.use('/api/store-config', storeConfigRoutes);
+app.use('/api/setup', setupRoutes);
 
 // Initialize Hetzner service if token is available
 if (process.env.HETZNER_API_TOKEN) {
