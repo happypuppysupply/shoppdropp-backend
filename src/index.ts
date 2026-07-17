@@ -169,4 +169,4 @@ server.listen(config.port, () => {
   console.log(`🔧 Environment: ${config.nodeEnv}`);
   console.log(`🖥️  VPS Provisioning: ${process.env.HETZNER_API_TOKEN ? 'Enabled' : 'Disabled'}`);
   console.log(`🔐 SSH Key: ${process.env.SSH_PRIVATE_KEY ? 'Configured' : 'Not configured'}`);
-});
+});// Deploy trigger: Fri Jul 17 20:13:43 +07 2026
