@@ -38,6 +38,9 @@ router.post('/debug-provision', async (req: Request, res: Response) => {
       status: 'provisioning',
     });
 
+    // Link worker to store so dashboard can find it
+    await db.updateStore(storeId, { worker_id: workerId });
+
     // Start provision in background (don't await)
     runProvision(workerId, userId, storeId);
 
@@ -139,6 +142,17 @@ async function runProvision(workerId: string, userId: string, storeId: string) {
         logs,
         result,
       });
+      
+      // Update store with server info
+      try {
+        await db.updateStore(storeId, {
+          hetzner_server_id: result.serverId.toString(),
+          ip_address: result.ipAddress,
+        });
+        log(`Store ${storeId} updated with server info`);
+      } catch (e: any) {
+        log(`Warning: Failed to update store with server info: ${e.message}`);
+      }
     }
     
     log('=== PROVISION COMPLETE ===');
