@@ -88,6 +88,18 @@ create table public.tasks (
   updated_at timestamp with time zone default timezone('utc'::text, now())
 );
 
+-- Worker Logs table
+CREATE TABLE public.worker_logs (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  worker_id uuid REFERENCES public.workers(id) ON DELETE CASCADE NOT NULL,
+  step_number int NOT NULL,
+  step_name text NOT NULL,
+  progress int DEFAULT 0,
+  message text NOT NULL,
+  log_level text DEFAULT 'info' CHECK (log_level IN ('info', 'warn', 'error')),
+  created_at timestamp with time zone DEFAULT timezone('utc'::text, now())
+);
+
 -- RLS Policies
 
 -- Users: only view own record
@@ -148,6 +160,18 @@ create policy "Users can view tasks for own workers"
     )
   );
 
+-- Worker Logs: users can view logs for own workers
+ALTER TABLE public.worker_logs ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users can view logs for own workers"
+  ON public.worker_logs FOR SELECT
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.workers
+      WHERE workers.id = worker_logs.worker_id
+      AND workers.user_id = auth.uid()
+    )
+  );
+
 -- Functions
 
 -- Update updated_at timestamp
@@ -190,3 +214,5 @@ create index idx_workers_store_id on public.workers(store_id);
 create index idx_ai_configs_user_id on public.ai_configs(user_id);
 create index idx_user_credentials_user_id on public.user_credentials(user_id);
 create index idx_tasks_worker_id on public.tasks(worker_id);
+create index idx_worker_logs_worker_id on public.worker_logs(worker_id);
+create index idx_worker_logs_created_at on public.worker_logs(created_at);

@@ -88,8 +88,87 @@ router.get('/provision-status/:workerId', async (req: Request, res: Response) =>
   }
 });
 
+// Get worker logs from database
+router.get('/worker-logs/:workerId', async (req: Request, res: Response) => {
+  try {
+    const { workerId } = req.params;
+    
+    // Get worker from DB
+    const worker = await db.getWorkerById(workerId);
+    if (!worker) {
+      return res.status(404).json({ error: 'Worker not found' });
+    }
+    
+    // Get logs from database
+    const dbLogs = await db.getWorkerLogs(workerId);
+    
+    // Get active provision logs if available
+    const provision = activeProvisions.get(workerId);
+    
+    res.json({
+      workerId: worker.id,
+      status: worker.status,
+      logs: dbLogs || [],
+      activeLogs: provision?.logs || [],
+      error: provision?.error || worker.error_message,
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Retry provisioning from failed step
+router.post('/retry-provision/:workerId', async (req: Request, res: Response) => {
+  try {
+    const { workerId } = req.params;
+    const { fromStep } = req.body;
+    
+    // Get worker from DB
+    const worker = await db.getWorkerById(workerId);
+    if (!worker) {
+      return res.status(404).json({ error: 'Worker not found' });
+    }
+    
+    // Can only retry from failed or error status
+    if (worker.status !== 'failed' && worker.status !== 'error') {
+      return res.status(400).json({ 
+        error: `Cannot retry worker with status '${worker.status}'. Must be 'failed' or 'error'.` 
+      });
+    }
+    
+    // Clear old error logs from active provisions
+    activeProvisions.delete(workerId);
+    
+    // Clear error logs from database
+    await db.clearWorkerLogs(workerId);
+    
+    // Reset worker status to 'provisioning'
+    await db.updateWorker(workerId, { 
+      status: 'provisioning',
+      error_message: null,
+    });
+    
+    // Restart provision in background (don't await)
+    runProvision(workerId, worker.user_id, worker.store_id, { fromStep });
+    
+    // Return immediately
+    return res.json({
+      success: true,
+      workerId,
+      fromStep,
+      message: 'Provisioning retry started. Poll /api/vps-debug/provision-status/:workerId for updates.',
+    });
+  } catch (error: any) {
+    console.error('Error retrying provision:', error);
+    res.status(500).json({
+      error: error.message,
+      stack: error.stack,
+    });
+  }
+});
+
 // Run provision in background
-async function runProvision(workerId: string, userId: string, storeId: string) {
+async function runProvision(workerId: string, userId: string, storeId: string, options?: { fromStep?: string }) {
   const logs: string[] = [];
   const log = (msg: string) => {
     const line = `[${new Date().toISOString()}] ${msg}`;
@@ -98,6 +177,10 @@ async function runProvision(workerId: string, userId: string, storeId: string) {
   };
   
   activeProvisions.set(workerId, { status: 'running', logs });
+  
+  if (options?.fromStep) {
+    log(`=== RETRY FROM STEP: ${options.fromStep} ===`);
+  }
   
   try {
     log('=== PROVISION START ===');

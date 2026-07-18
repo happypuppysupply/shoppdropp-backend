@@ -1,6 +1,6 @@
 import { NodeSSH } from 'node-ssh';
 import { HetznerService, HetznerServerConfig } from './hetznerService';
-import { db } from '../db/supabase';
+import { db, supabase } from '../db/supabase';
 import { v4 as uuidv4 } from 'uuid';
 
 export interface VPSConfig {
@@ -123,9 +123,105 @@ export class VPSProvisioner {
     const timestamp = new Date().toISOString();
     const logEntry = `[${timestamp}] Step ${stepNumber}: ${stepName} - ${progress}% - ${message}`;
     
-    // Store progress in a simple format that the frontend can parse
-    // Using the existing metadata field or we can parse from logs
+    // Log to console for debugging
     console.log(`[VPS] ${logEntry}`);
+    
+    // Persist log to Supabase
+    try {
+      const { error } = await supabase
+        .from('worker_logs')
+        .insert({
+          id: uuidv4(),
+          worker_id: workerId,
+          step_number: stepNumber,
+          step_name: stepName,
+          progress,
+          message,
+          created_at: timestamp,
+        });
+      
+      if (error) {
+        console.error(`[VPS] Failed to persist log to Supabase:`, error);
+      }
+    } catch (err) {
+      console.error(`[VPS] Error persisting log:`, err);
+    }
+  }
+
+  /**
+   * Retrieve logs for a specific worker
+   */
+  async getWorkerLogs(workerId: string, limit: number = 100): Promise<Array<{
+    id: string;
+    worker_id: string;
+    step_number: number;
+    step_name: string;
+    progress: number;
+    message: string;
+    created_at: string;
+  }>> {
+    const { data, error } = await supabase
+      .from('worker_logs')
+      .select('*')
+      .eq('worker_id', workerId)
+      .order('created_at', { ascending: true })
+      .limit(limit);
+    
+    if (error) {
+      console.error(`[VPS] Failed to retrieve worker logs:`, error);
+      throw new Error(`Failed to retrieve worker logs: ${error.message}`);
+    }
+    
+    return data || [];
+  }
+
+  /**
+   * Get the latest log entry for a worker
+   */
+  async getLatestWorkerLog(workerId: string): Promise<{
+    id: string;
+    worker_id: string;
+    step_number: number;
+    step_name: string;
+    progress: number;
+    message: string;
+    created_at: string;
+  } | null> {
+    const { data, error } = await supabase
+      .from('worker_logs')
+      .select('*')
+      .eq('worker_id', workerId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single();
+    
+    if (error) {
+      if (error.code === 'PGRST116') {
+        // No logs found
+        return null;
+      }
+      console.error(`[VPS] Failed to retrieve latest worker log:`, error);
+      throw new Error(`Failed to retrieve latest worker log: ${error.message}`);
+    }
+    
+    return data;
+  }
+
+  /**
+   * Clear logs for a specific worker (useful when reprovisioning)
+   */
+  async clearWorkerLogs(workerId: string): Promise<void> {
+    const { error } = await supabase
+      .from('worker_logs')
+      .delete()
+      .eq('worker_id', workerId);
+    
+    if (error) {
+      console.error(`[VPS] Failed to clear worker logs:`, error);
+      throw new Error(`Failed to clear worker logs: ${error.message}`);
+    }
+    
+    console.log(`[VPS] Cleared logs for worker ${workerId}`);
   }
 
   private async installOpenClaw(ipAddress: string, config: VPSConfig): Promise<void> {
