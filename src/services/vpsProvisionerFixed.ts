@@ -112,7 +112,7 @@ export class VPSProvisionerFixed {
 
       // Step 7: Update status
       await db.updateWorker(config.workerId, {
-        status: 'active',
+        status: 'running',
       });
 
       return {
