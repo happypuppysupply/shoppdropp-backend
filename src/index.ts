@@ -1,10 +1,10 @@
 import express from 'express';
 import cors from 'cors';
 import { createServer } from 'http';
-import { WebSocketServer } from 'ws';
-import expressWs from 'express-ws';
+import { WebSocketServer, WebSocket } from 'ws';
 import { config } from './config';
 import { db } from './db/supabase';
+import jwt from 'jsonwebtoken';
 
 // Routes
 import authRoutes from './routes/auth';
@@ -28,7 +28,7 @@ import debugRoutes from './routes/debug';
 import openWebNinjaRoutes from './routes/openwebninja';
 import storeConfigRoutes from './routes/store-config';
 import setupRoutes from './routes/setup';
-import wsProxyRoutes from './routes/ws-proxy';
+import wsProxyRoutes, { handleWsProxy } from './routes/ws-proxy';
 
 // Services
 import { WorkerManager } from './services/workerManager';
@@ -37,10 +37,6 @@ import { getWorkerCommandQueue } from './services/workerCommands';
 
 const app = express();
 const server = createServer(app);
-
-// Initialize express-ws for WebSocket routes
-const wsApp = expressWs(app, server);
-
 const wss = new WebSocketServer({ server, path: '/ws' });
 const workerManager = new WorkerManager();
 
@@ -88,7 +84,60 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// WebSocket handling for workers
+// WebSocket upgrade handling for /ws/worker/* paths
+server.on('upgrade', async (request, socket, head) => {
+  const url = request.url || '';
+  
+  // Only handle /ws/worker/* paths for proxy
+  if (url.startsWith('/ws/worker/')) {
+    console.log(`[WS-Upgrade] Handling upgrade for ${url}`);
+    
+    try {
+      // Extract and verify JWT token from query params or headers
+      const token = request.headers['authorization']?.replace('Bearer ', '') || 
+                    new URL(url, 'http://localhost').searchParams.get('token');
+      
+      if (!token) {
+        console.log('[WS-Upgrade] No token provided');
+        socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+        socket.destroy();
+        return;
+      }
+
+      // Verify JWT
+      let userId: string;
+      try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET || config.jwtSecret) as any;
+        userId = decoded.userId || decoded.sub;
+      } catch (err) {
+        console.log('[WS-Upgrade] Invalid token');
+        socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+        socket.destroy();
+        return;
+      }
+
+      // Create WebSocket and attach user
+      wss.handleUpgrade(request, socket, head, (ws) => {
+        (ws as any).user = { id: userId };
+        (ws as any).req = { url, user: { id: userId } };
+        handleWsProxy(ws, (ws as any).req);
+      });
+      
+    } catch (error) {
+      console.error('[WS-Upgrade] Error:', error);
+      socket.write('HTTP/1.1 500 Internal Server Error\r\n\r\n');
+      socket.destroy();
+    }
+    return;
+  }
+  
+  // Let the default WSS handle other /ws paths
+  wss.handleUpgrade(request, socket, head, (ws) => {
+    wss.emit('connection', ws, request);
+  });
+});
+
+// WebSocket handling for workers (on /ws path)
 wss.on('connection', (ws, req) => {
   const url = new URL(req.url!, `http://${req.headers.host}`);
   const workerId = url.searchParams.get('workerId');

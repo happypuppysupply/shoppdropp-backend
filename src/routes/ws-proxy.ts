@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, Request, Response } from 'express';
 import WebSocket from 'ws';
 import { db } from '../db/supabase';
 import { authenticate } from '../middleware/auth';
@@ -9,21 +9,32 @@ const router = Router();
 const proxyConnections = new Map<string, WebSocket>();
 
 /**
- * WebSocket proxy endpoint
- * Frontend (HTTPS) connects to: wss://shoppdropp-api.onrender.com/ws/worker/:workerId
- * Backend proxies to: ws://<worker-ip>:8080/ws
+ * HTTP endpoint to handle WebSocket upgrade
+ * This is called by the main server when a WS connection comes in
  */
-router.ws('/worker/:workerId', authenticate, async (ws, req) => {
-  const { workerId } = req.params;
+export async function handleWsProxy(ws: WebSocket, req: Request) {
+  // Parse URL to get workerId
+  const url = req.url || '';
+  const match = url.match(/\/ws\/worker\/([^\/\?]+)/);
+  const workerId = match ? match[1] : null;
+  
+  // Get user from auth (passed through from main server)
   const userId = (req as any).user?.id;
 
   console.log(`[WS-Proxy] Connection request for worker ${workerId}`);
+
+  if (!workerId) {
+    console.log(`[WS-Proxy] No workerId in URL: ${url}`);
+    ws.close(1008, 'Worker ID required');
+    return;
+  }
 
   try {
     // Verify worker exists and belongs to user
     const worker = await db.getWorkerById(workerId);
     if (!worker || worker.user_id !== userId) {
       console.log(`[WS-Proxy] Worker not found or unauthorized`);
+      ws.send(JSON.stringify({ type: 'error', message: 'Worker not found or unauthorized' }));
       ws.close(1008, 'Unauthorized');
       return;
     }
@@ -47,14 +58,14 @@ router.ws('/worker/:workerId', authenticate, async (ws, req) => {
     proxyConnections.set(workerId, vpsWs);
 
     // Forward messages from VPS to frontend
-    vpsWs.on('message', (data) => {
+    vpsWs.on('message', (data: WebSocket.Data) => {
       if (ws.readyState === ws.OPEN) {
         ws.send(data.toString());
       }
     });
 
     // Forward messages from frontend to VPS
-    ws.on('message', (data) => {
+    ws.on('message', (data: WebSocket.Data) => {
       if (vpsWs.readyState === vpsWs.OPEN) {
         vpsWs.send(data.toString());
       }
@@ -71,7 +82,7 @@ router.ws('/worker/:workerId', authenticate, async (ws, req) => {
     });
 
     // Handle VPS errors
-    vpsWs.on('error', (error) => {
+    vpsWs.on('error', (error: Error) => {
       console.error(`[WS-Proxy] VPS connection error:`, error.message);
       if (ws.readyState === ws.OPEN) {
         ws.send(JSON.stringify({ 
@@ -82,7 +93,7 @@ router.ws('/worker/:workerId', authenticate, async (ws, req) => {
     });
 
     // Handle VPS close
-    vpsWs.on('close', (code, reason) => {
+    vpsWs.on('close', (code: number, reason: Buffer) => {
       console.log(`[WS-Proxy] VPS connection closed: ${code}`);
       proxyConnections.delete(workerId);
       if (ws.readyState === ws.OPEN) {
@@ -91,7 +102,7 @@ router.ws('/worker/:workerId', authenticate, async (ws, req) => {
     });
 
     // Handle frontend close
-    ws.on('close', (code, reason) => {
+    ws.on('close', (code: number, reason: Buffer) => {
       console.log(`[WS-Proxy] Frontend disconnected: ${code}`);
       proxyConnections.delete(workerId);
       if (vpsWs.readyState === vpsWs.OPEN) {
@@ -100,7 +111,7 @@ router.ws('/worker/:workerId', authenticate, async (ws, req) => {
     });
 
     // Handle frontend errors
-    ws.on('error', (error) => {
+    ws.on('error', (error: Error) => {
       console.error(`[WS-Proxy] Frontend error:`, error);
     });
 
@@ -109,6 +120,15 @@ router.ws('/worker/:workerId', authenticate, async (ws, req) => {
     ws.send(JSON.stringify({ type: 'error', message: error.message }));
     ws.close(1011, 'Internal error');
   }
+}
+
+// Health check endpoint
+router.get('/health', (req: Request, res: Response) => {
+  res.json({ 
+    status: 'ok', 
+    active_connections: proxyConnections.size,
+    timestamp: new Date().toISOString() 
+  });
 });
 
 export default router;
