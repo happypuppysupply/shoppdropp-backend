@@ -15,13 +15,14 @@ router.get('/', authenticate, async (req: Request, res: Response) => {
     let worker = null;
     let recent_tasks: any[] = [];
     
+    // Get all workers for user and filter by store if needed
+    const workers = await db.getWorkersByUser(user.id);
+    
     if (storeId) {
-      // Get worker for specific store
-      const workers = await db.getWorkersByStore(storeId);
-      worker = workers.find(w => w.user_id === user.id) || null;
+      // Filter by store_id
+      worker = workers.find(w => w.store_id === storeId) || null;
     } else {
-      // Get first active worker for user
-      const workers = await db.getWorkersByUser(user.id);
+      // Get first active worker
       worker = workers.find(w => w.status === 'running' || w.status === 'configuring') || workers[0] || null;
     }
     
