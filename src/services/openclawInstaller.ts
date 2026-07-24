@@ -18,11 +18,12 @@ export class OpenClawInstaller {
       console.log('[OpenClaw] Using SSH key from environment variables');
       console.log('[OpenClaw] Key format:', this.sshPrivateKey.substring(0, 40));
     } else {
-      // Fallback to file system - use ED25519 key that matches Hetzner
+      // Fallback to file system - use RSA key (PEM format compatible with node-ssh)
+      // ED25519 in OpenSSH format is NOT supported by node-ssh
       const sshDir = '/home/markjohnson44la44gigi/.openclaw/workspace/.secrets';
       try {
-        this.sshPrivateKey = fs.readFileSync(path.join(sshDir, 'shoppdropp_render_ed25519'), 'utf8').trim();
-        console.log('[OpenClaw] Using SSH key from file system (ED25519)');
+        this.sshPrivateKey = fs.readFileSync(path.join(sshDir, 'shoppdropp_render_rsa'), 'utf8').trim();
+        console.log('[OpenClaw] Using RSA SSH key from file system');
       } catch (err) {
         console.error('[OpenClaw] Failed to read SSH key:', err);
         throw new Error('SSH_PRIVATE_KEY environment variable or key file not found');

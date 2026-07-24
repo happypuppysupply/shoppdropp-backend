@@ -50,10 +50,10 @@ export class VPSProvisioner {
         },
       };
 
-      // Use existing 'render' SSH key from Hetzner (ID: 115169010)
-      // This ensures the key matches our private key
-      const sshKeyId = 115169010;
-      console.log(`[VPS] Using existing SSH key: ${sshKeyId}`);
+      // Find or upload SSH key
+      console.log(`[VPS] Ensuring SSH key exists on Hetzner...`);
+      const sshKeyId = await this.ensureSSHKey();
+      console.log(`[VPS] Using SSH key ID: ${sshKeyId}`);
 
       console.log(`[VPS] Calling hetzner.createServer with sshKeyId=${sshKeyId}...`);
       const server = await this.hetzner.createServer(serverConfig, sshKeyId);
@@ -393,6 +393,32 @@ done`;
     }
   }
 
+  private async ensureSSHKey(): Promise<number> {
+    try {
+      // Try to find existing key (prefer RSA key)
+      const keys = await this.hetzner.listSSHKeys();
+      const existingKey = keys.find((k: any) => k.name === 'shoppdropp-render-rsa') || 
+                        keys.find((k: any) => k.name === 'shoppdropp-render-fixed');
+      
+      if (existingKey) {
+        console.log(`[VPS] Found existing SSH key: ${existingKey.id} (${existingKey.name})`);
+        return existingKey.id;
+      }
+
+      // Create new key with RSA public key
+      console.log(`[VPS] Creating new SSH key with RSA public key...`);
+      const newKey = await this.hetzner.createSSHKey(
+        'shoppdropp-render-rsa',
+        this.sshPublicKey
+      );
+      console.log(`[VPS] Created SSH key: ${newKey.id}`);
+      return newKey.id;
+    } catch (err: any) {
+      console.error(`[VPS] SSH key error:`, err.message);
+      throw err;
+    }
+  }
+
   private async runCommand(ssh: NodeSSH, command: string, timeoutMs: number = 120000): Promise<void> {
     console.log(`[SSH] Running: ${command.substring(0, 80)}...`);
     const result = await ssh.execCommand(command, { execOptions: { timeout: timeoutMs } });
@@ -497,14 +523,30 @@ WantedBy=multi-user.target
 // Factory function
 export function createVPSProvisioner(): VPSProvisioner {
   const hetznerToken = process.env.HETZNER_API_TOKEN;
-  const sshPrivateKey = process.env.SSH_PRIVATE_KEY;
-  const sshPublicKey = process.env.SSH_PUBLIC_KEY;
+  let sshPrivateKey = process.env.SSH_PRIVATE_KEY;
+  let sshPublicKey = process.env.SSH_PUBLIC_KEY;
 
   if (!hetznerToken) {
     throw new Error('HETZNER_API_TOKEN not configured');
   }
-  if (!sshPrivateKey) {
-    throw new Error('SSH_PRIVATE_KEY not configured');
+
+  // Try environment variables first, fallback to file system
+  if (!sshPrivateKey || !sshPublicKey) {
+    console.log('[VPS] SSH keys not in env vars, reading from file system...');
+    try {
+      const sshDir = '/home/markjohnson44la44gigi/.openclaw/workspace/.secrets';
+      const fs = require('fs');
+      const path = require('path');
+      sshPrivateKey = fs.readFileSync(path.join(sshDir, 'shoppdropp_render_rsa'), 'utf8').trim();
+      sshPublicKey = fs.readFileSync(path.join(sshDir, 'shoppdropp_render_rsa.pub'), 'utf8').trim();
+      console.log('[VPS] Using RSA SSH keys from file system');
+    } catch (err) {
+      throw new Error('SSH_PRIVATE_KEY/SSH_PUBLIC_KEY not configured and keys not found in file system');
+    }
+  } else {
+    // Clean up keys from env vars (handle escaped newlines)
+    sshPrivateKey = sshPrivateKey.replace(/\\n/g, '\n').trim();
+    sshPublicKey = sshPublicKey.trim();
   }
 
   const hetznerService = new HetznerService(hetznerToken);

@@ -43,16 +43,17 @@ export class VPSProvisionerFixed {
       console.log('[VPS] Using SSH keys from environment variables');
       console.log('[VPS] Private key starts with:', this.sshPrivateKey.substring(0, 30));
     } else {
-      // Fallback to file system - use ED25519 key that matches Hetzner
+      // Fallback to file system - use RSA key (PEM format compatible with node-ssh)
+      // ED25519 in OpenSSH format is NOT supported by node-ssh
       const sshDir = '/home/markjohnson44la44gigi/.openclaw/workspace/.secrets';
       try {
-        this.sshPrivateKey = fs.readFileSync(path.join(sshDir, 'shoppdropp_render_ed25519'), 'utf8').trim();
-        this.sshPublicKey = fs.readFileSync(path.join(sshDir, 'shoppdropp_render_key.pub'), 'utf8').trim();
-        console.log('[VPS] Using SSH keys from file system (ED25519)');
-        console.log('[VPS] Private key starts with:', this.sshPrivateKey.substring(0, 30));
+        this.sshPrivateKey = fs.readFileSync(path.join(sshDir, 'shoppdropp_render_rsa'), 'utf8').trim();
+        this.sshPublicKey = fs.readFileSync(path.join(sshDir, 'shoppdropp_render_rsa.pub'), 'utf8').trim();
+        console.log('[VPS] Using RSA SSH keys from file system');
+        console.log('[VPS] Private key format:', this.sshPrivateKey.substring(0, 30));
       } catch (err) {
         console.error('[VPS] Failed to read SSH keys from file system:', err);
-        throw new Error('SSH keys not found. Please set SSH_PRIVATE_KEY and SSH_PUBLIC_KEY environment variables.');
+        throw new Error('SSH keys not found. Please set SSH_PRIVATE_KEY and SSH_PUBLIC_KEY environment variables, or ensure shoppdropp_render_rsa exists.');
       }
     }
   }
@@ -143,19 +144,20 @@ export class VPSProvisionerFixed {
 
   private async ensureSSHKey(): Promise<number> {
     try {
-      // Try to find existing key
+      // Try to find existing key (prefer RSA key)
       const keys = await this.hetzner.listSSHKeys();
-      const existingKey = keys.find((k: any) => k.name === 'shoppdropp-render-fixed');
+      const existingKey = keys.find((k: any) => k.name === 'shoppdropp-render-rsa') || 
+                        keys.find((k: any) => k.name === 'shoppdropp-render-fixed');
       
       if (existingKey) {
-        console.log(`[VPS] Found existing SSH key: ${existingKey.id}`);
+        console.log(`[VPS] Found existing SSH key: ${existingKey.id} (${existingKey.name})`);
         return existingKey.id;
       }
 
       // Create new key
-      console.log(`[VPS] Creating new SSH key...`);
+      console.log(`[VPS] Creating new SSH key with RSA public key...`);
       const newKey = await this.hetzner.createSSHKey(
-        'shoppdropp-render-fixed',
+        'shoppdropp-render-rsa',
         this.sshPublicKey
       );
       console.log(`[VPS] Created SSH key: ${newKey.id}`);
