@@ -71,6 +71,7 @@ export class VPSProvisioner {
       // Step 3: Update worker record with server info
       await db.updateWorker(config.workerId, {
         hetzner_server_id: server.id.toString(),
+        ip_address: readyServer.public_net.ipv4.ip,
         status: 'configuring',
       });
 
