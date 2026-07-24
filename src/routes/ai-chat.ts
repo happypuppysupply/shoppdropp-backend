@@ -291,6 +291,9 @@ async function executeWorkerCommand(command: any, worker: any, userId: string, s
   }
 }
 
+// Import product research service
+import { productResearchService } from '../services/productResearchService';
+
 // Execute tasks on worker
 async function executeTask(command: any, worker: any, userId: string) {
   const { task, params = {} } = command;
@@ -304,7 +307,41 @@ async function executeTask(command: any, worker: any, userId: string) {
     };
   }
   
-  // Queue the command
+  // Handle specific tasks with real API calls
+  if (task === 'product_research') {
+    try {
+      console.log(`🔍 Starting real product research for user ${userId}`);
+      
+      const result = await productResearchService.startResearch({
+        store_id: params.store_id,
+        user_id: userId,
+        category: params.category,
+        keywords: params.keywords,
+        min_price: params.min_price,
+        max_price: params.max_price,
+      });
+      
+      return {
+        status: 'running',
+        task,
+        research_id: result.id,
+        command_id: result.id,
+        worker_id: worker.id,
+        estimated_duration: '5-10 minutes',
+        message: `Product research started. Research ID: ${result.id}`,
+        note: 'Research is running in background. Check back in 5-10 minutes for results.'
+      };
+    } catch (error: any) {
+      console.error('Product research error:', error);
+      return {
+        status: 'error',
+        task,
+        message: `Failed to start product research: ${error.message}`
+      };
+    }
+  }
+  
+  // For other tasks, queue them for the worker
   const queue = getWorkerCommandQueue();
   const queuedCommand = await queue.createCommand(worker.id, 'run_task', {
     task_type: task,
