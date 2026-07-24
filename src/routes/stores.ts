@@ -4,6 +4,7 @@ import { authenticate } from '../middleware/auth';
 import { db, supabase } from '../db/supabase';
 import { v4 as uuidv4 } from 'uuid';
 import { WorkerManager } from '../services/workerManager';
+import { createVPSProvisioner } from '../services/vpsProvisioner';
 
 const router = Router();
 const workerManager = new WorkerManager();
@@ -40,8 +41,38 @@ router.post('/', authenticate, [
       status: 'pending',
     });
 
-    // Provision worker (mock for now)
-    await workerManager.provisionWorker(req.user!.id, store.id);
+    // Create worker record first, then provision VPS
+    const worker = await db.createWorker({
+      id: uuidv4(),
+      user_id: req.user!.id,
+      store_id: store.id,
+      status: 'provisioning',
+    });
+
+    // Provision Hetzner VPS
+    try {
+      const provisioner = createVPSProvisioner();
+      const result = await provisioner.provisionVPS({
+        workerId: worker.id,
+        storeId: store.id,
+        userId: req.user!.id,
+        envVars: { STORE_ID: store.id, USER_ID: req.user!.id },
+      });
+
+      if (result.status === 'success') {
+        await db.updateWorker(worker.id, {
+          hetzner_server_id: String(result.serverId),
+          ip_address: result.ipAddress,
+          status: 'running',
+        });
+      } else {
+        await db.updateWorker(worker.id, { status: 'error' });
+      }
+    } catch (provisionErr: any) {
+      console.error('VPS provisioning failed:', provisionErr);
+      await db.updateWorker(worker.id, { status: 'error' });
+      // Still return store - worker can be retried later
+    }
 
     res.json(store);
   } catch (error) {
