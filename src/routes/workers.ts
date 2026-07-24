@@ -22,8 +22,8 @@ router.get('/', authenticate, async (req: Request, res: Response) => {
       // Filter by store_id
       worker = workers.find(w => w.store_id === storeId) || null;
     } else {
-      // Get first active worker
-      worker = workers.find(w => w.status === 'running' || w.status === 'configuring') || workers[0] || null;
+      // Get first active worker (running, configuring, or provisioning)
+      worker = workers.find(w => ['running', 'configuring', 'provisioning'].includes(w.status)) || workers[0] || null;
     }
     
     // Format worker for frontend
@@ -37,6 +37,11 @@ router.get('/', authenticate, async (req: Request, res: Response) => {
       memory_percent: undefined,
       current_task: undefined
     } : null;
+    
+    // Prevent caching
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
     
     res.json({
       worker: formattedWorker,
