@@ -29,10 +29,22 @@ export class VPSProvisionerFixed {
   constructor(hetznerService: HetznerService) {
     this.hetzner = hetznerService;
     
-    // Read SSH keys from workspace
-    const sshDir = '/home/markjohnson44la44gigi/.openclaw/workspace/.secrets';
-    this.sshPrivateKey = fs.readFileSync(path.join(sshDir, 'shoppdropp_render_rsa'), 'utf8');
-    this.sshPublicKey = fs.readFileSync(path.join(sshDir, 'shoppdropp_render_key.pub'), 'utf8');
+    // Read SSH keys from environment variables (set in Render dashboard)
+    // Fallback to file system for local development
+    const sshPrivateKeyFromEnv = process.env.SSH_PRIVATE_KEY;
+    const sshPublicKeyFromEnv = process.env.SSH_PUBLIC_KEY;
+    
+    if (sshPrivateKeyFromEnv && sshPublicKeyFromEnv) {
+      this.sshPrivateKey = sshPrivateKeyFromEnv.replace(/\\n/g, '\n');
+      this.sshPublicKey = sshPublicKeyFromEnv.replace(/\\n/g, '\n');
+      console.log('[VPS] Using SSH keys from environment variables');
+    } else {
+      // Fallback to file system for local development
+      const sshDir = '/home/markjohnson44la44gigi/.openclaw/workspace/.secrets';
+      this.sshPrivateKey = fs.readFileSync(path.join(sshDir, 'shoppdropp_render_rsa'), 'utf8');
+      this.sshPublicKey = fs.readFileSync(path.join(sshDir, 'shoppdropp_render_key.pub'), 'utf8');
+      console.log('[VPS] Using SSH keys from file system');
+    }
   }
 
   async provisionVPS(config: VPSConfig): Promise<ProvisioningResult> {

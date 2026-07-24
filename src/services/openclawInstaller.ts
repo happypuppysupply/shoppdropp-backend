@@ -6,8 +6,19 @@ export class OpenClawInstaller {
   private sshPrivateKey: string;
 
   constructor() {
-    const sshDir = '/home/markjohnson44la44gigi/.openclaw/workspace/.secrets';
-    this.sshPrivateKey = fs.readFileSync(path.join(sshDir, 'shoppdropp_render_rsa'), 'utf8');
+    // Read SSH key from environment variables (set in Render dashboard)
+    // Fallback to file system for local development
+    const sshPrivateKeyFromEnv = process.env.SSH_PRIVATE_KEY;
+    
+    if (sshPrivateKeyFromEnv) {
+      this.sshPrivateKey = sshPrivateKeyFromEnv.replace(/\\n/g, '\n');
+      console.log('[OpenClaw] Using SSH key from environment variables');
+    } else {
+      // Fallback to file system for local development
+      const sshDir = '/home/markjohnson44la44gigi/.openclaw/workspace/.secrets';
+      this.sshPrivateKey = fs.readFileSync(path.join(sshDir, 'shoppdropp_render_rsa'), 'utf8');
+      console.log('[OpenClaw] Using SSH key from file system');
+    }
   }
 
   async installOpenClaw(ipAddress: string, config: {
