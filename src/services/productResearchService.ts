@@ -1,5 +1,5 @@
 import { openWebNinjaService } from './openwebninjaService';
-import { supabaseService } from './supabaseService';
+import { supabase } from '../db/supabase';
 
 interface ResearchConfig {
   store_id: string;
@@ -189,7 +189,6 @@ export class ProductResearchService {
 
   private async saveResearchResult(result: ResearchResult) {
     try {
-      const supabase = supabaseService.getClient();
       await supabase.from('product_research_results').insert(result);
     } catch (err) {
       console.error('Failed to save research result:', err);
@@ -198,7 +197,6 @@ export class ProductResearchService {
 
   private async updateResearchResult(researchId: string, update: Partial<ResearchResult>) {
     try {
-      const supabase = supabaseService.getClient();
       await supabase
         .from('product_research_results')
         .update(update)
@@ -214,7 +212,6 @@ export class ProductResearchService {
 
   async getResearchHistory(storeId: string, limit: number = 10): Promise<ResearchResult[]> {
     try {
-      const supabase = supabaseService.getClient();
       const { data, error } = await supabase
         .from('product_research_results')
         .select('*')

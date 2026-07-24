@@ -1,7 +1,6 @@
 import { Router } from 'express';
 import { getSupabaseClient } from '../db/supabase';
-import { authenticateToken } from '../middleware/auth';
-import { productResearchService } from '../services/productResearchService';
+import { authenticate } from '../middleware/auth';
 
 const router = Router();
 
@@ -9,7 +8,7 @@ const router = Router();
  * GET /api/workers/:workerId/tasks
  * Get recent tasks for a worker (for polling status)
  */
-router.get('/:workerId/tasks', authenticateToken, async (req, res) => {
+router.get('/:workerId/tasks', authenticate, async (req, res) => {
   try {
     const { workerId } = req.params;
     const userId = req.user?.id;
@@ -58,7 +57,7 @@ router.get('/:workerId/tasks', authenticateToken, async (req, res) => {
     }
 
     // Format tasks for frontend
-    const formattedTasks = tasks?.map(task => ({
+    const formattedTasks = tasks?.map((task: any) => ({
       id: task.id,
       task_type: task.payload?.task,
       status: task.status,
