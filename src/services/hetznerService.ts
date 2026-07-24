@@ -111,6 +111,18 @@ export class HetznerService {
     }
   }
 
+  // Delete SSH key
+  async deleteSSHKey(keyId: number): Promise<void> {
+    try {
+      console.log('[Hetzner] Deleting SSH key:', keyId);
+      await this.client.delete(`/ssh_keys/${keyId}`);
+      console.log('[Hetzner] SSH key deleted:', keyId);
+    } catch (error: any) {
+      console.error('[Hetzner] Delete SSH key error:', error.response?.data || error.message);
+      throw new Error(`Failed to delete SSH key: ${error.response?.data?.error?.message || error.message}`);
+    }
+  }
+
   // Get key fingerprint
   private async getKeyFingerprint(publicKey: string): Promise<string> {
     const parts = publicKey.trim().split(' ');
