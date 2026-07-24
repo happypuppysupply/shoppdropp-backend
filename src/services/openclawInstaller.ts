@@ -7,11 +7,17 @@ export class OpenClawInstaller {
 
   constructor() {
     // Read SSH key from environment variables (set in Render dashboard)
+    // Supports base64 encoded key (SSH_PRIVATE_KEY_BASE64) or plain text
     // Fallback to file system for local development
-    const sshPrivateKeyFromEnv = process.env.SSH_PRIVATE_KEY;
+    const sshPrivateKeyBase64 = process.env.SSH_PRIVATE_KEY_BASE64;
     
-    if (sshPrivateKeyFromEnv) {
-      this.sshPrivateKey = sshPrivateKeyFromEnv.replace(/\\n/g, '\n');
+    if (sshPrivateKeyBase64) {
+      // Decode base64 private key
+      this.sshPrivateKey = Buffer.from(sshPrivateKeyBase64, 'base64').toString('utf8');
+      console.log('[OpenClaw] Using SSH key from environment variables (base64 decoded)');
+    } else if (process.env.SSH_PRIVATE_KEY) {
+      // Fallback to plain text with newline replacement
+      this.sshPrivateKey = process.env.SSH_PRIVATE_KEY.replace(/\\n/g, '\n');
       console.log('[OpenClaw] Using SSH key from environment variables');
     } else {
       // Fallback to file system for local development

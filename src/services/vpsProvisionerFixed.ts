@@ -30,13 +30,20 @@ export class VPSProvisionerFixed {
     this.hetzner = hetznerService;
     
     // Read SSH keys from environment variables (set in Render dashboard)
+    // Supports base64 encoded keys (SSH_PRIVATE_KEY_BASE64) or plain text
     // Fallback to file system for local development
-    const sshPrivateKeyFromEnv = process.env.SSH_PRIVATE_KEY;
+    const sshPrivateKeyBase64 = process.env.SSH_PRIVATE_KEY_BASE64;
     const sshPublicKeyFromEnv = process.env.SSH_PUBLIC_KEY;
     
-    if (sshPrivateKeyFromEnv && sshPublicKeyFromEnv) {
-      this.sshPrivateKey = sshPrivateKeyFromEnv.replace(/\\n/g, '\n');
-      this.sshPublicKey = sshPublicKeyFromEnv.replace(/\\n/g, '\n');
+    if (sshPrivateKeyBase64 && sshPublicKeyFromEnv) {
+      // Decode base64 private key
+      this.sshPrivateKey = Buffer.from(sshPrivateKeyBase64, 'base64').toString('utf8');
+      this.sshPublicKey = sshPublicKeyFromEnv;
+      console.log('[VPS] Using SSH keys from environment variables (base64 decoded)');
+    } else if (process.env.SSH_PRIVATE_KEY && sshPublicKeyFromEnv) {
+      // Fallback to plain text with newline replacement
+      this.sshPrivateKey = process.env.SSH_PRIVATE_KEY.replace(/\\n/g, '\n');
+      this.sshPublicKey = sshPublicKeyFromEnv;
       console.log('[VPS] Using SSH keys from environment variables');
     } else {
       // Fallback to file system for local development
