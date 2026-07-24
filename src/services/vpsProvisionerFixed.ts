@@ -37,15 +37,23 @@ export class VPSProvisionerFixed {
     
     if (sshPrivateKeyFromEnv && sshPublicKeyFromEnv) {
       // Use keys from environment (properly handle newlines)
-      this.sshPrivateKey = sshPrivateKeyFromEnv.replace(/\\n/g, '\n');
-      this.sshPublicKey = sshPublicKeyFromEnv;
+      // Handle both literal \n and actual newlines
+      this.sshPrivateKey = sshPrivateKeyFromEnv.replace(/\\n/g, '\n').trim();
+      this.sshPublicKey = sshPublicKeyFromEnv.trim();
       console.log('[VPS] Using SSH keys from environment variables');
+      console.log('[VPS] Private key starts with:', this.sshPrivateKey.substring(0, 30));
     } else {
       // Fallback to file system - use ED25519 key that matches Hetzner
       const sshDir = '/home/markjohnson44la44gigi/.openclaw/workspace/.secrets';
-      this.sshPrivateKey = fs.readFileSync(path.join(sshDir, 'shoppdropp_render_ed25519'), 'utf8');
-      this.sshPublicKey = fs.readFileSync(path.join(sshDir, 'shoppdropp_render_key.pub'), 'utf8');
-      console.log('[VPS] Using SSH keys from file system (ED25519)');
+      try {
+        this.sshPrivateKey = fs.readFileSync(path.join(sshDir, 'shoppdropp_render_ed25519'), 'utf8').trim();
+        this.sshPublicKey = fs.readFileSync(path.join(sshDir, 'shoppdropp_render_key.pub'), 'utf8').trim();
+        console.log('[VPS] Using SSH keys from file system (ED25519)');
+        console.log('[VPS] Private key starts with:', this.sshPrivateKey.substring(0, 30));
+      } catch (err) {
+        console.error('[VPS] Failed to read SSH keys from file system:', err);
+        throw new Error('SSH keys not found. Please set SSH_PRIVATE_KEY and SSH_PUBLIC_KEY environment variables.');
+      }
     }
   }
 
