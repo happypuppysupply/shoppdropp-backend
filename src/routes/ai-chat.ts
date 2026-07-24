@@ -352,4 +352,107 @@ router.get('/context', authenticate, async (req: Request, res: Response) => {
   }
 });
 
+// Run a task on the worker
+router.post('/task', authenticate, async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user;
+    const { task, store_id, ...params } = req.body;
+    
+    if (!task) {
+      return res.status(400).json({ error: 'Task name is required' });
+    }
+    
+    // Get active worker for user
+    const workers = await db.getWorkersByUser(user.id);
+    const activeWorker = workers.find(w => w.status === 'running' || w.status === 'provisioning');
+    
+    if (!activeWorker) {
+      return res.status(400).json({ 
+        error: 'No active worker found',
+        message: 'Please setup a VPS worker first'
+      });
+    }
+    
+    // Check if AI is configured
+    const aiConfig = await db.getAIConfig(user.id);
+    if (!aiConfig) {
+      return res.status(400).json({ 
+        error: 'AI not configured',
+        message: 'Please configure AI provider in Integrations'
+      });
+    }
+    
+    // Get task definition
+    const taskDef = Object.values(WORKER_TASKS).find(t => t.name === task);
+    if (!taskDef) {
+      return res.status(400).json({ 
+        error: 'Unknown task',
+        available: Object.values(WORKER_TASKS).map(t => t.name)
+      });
+    }
+    
+    // Queue the task
+    const queue = getWorkerCommandQueue();
+    const queuedCommand = await queue.createCommand(activeWorker.id, 'run_task', {
+      task_type: task,
+      task_params: { store_id, ...params },
+      task_definition: taskDef,
+      user_id: user.id,
+    });
+    
+    res.json({
+      success: true,
+      task: task,
+      status: 'queued',
+      command_id: queuedCommand.id,
+      worker_id: activeWorker.id,
+      estimated_duration: taskDef.duration_estimate,
+      message: `Task "${task}" queued successfully. Estimated duration: ${taskDef.duration_estimate}`
+    });
+  } catch (error: any) {
+    console.error('Task execution error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Stop worker
+router.post('/stop-worker', authenticate, async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user;
+    const { worker_id } = req.body;
+    
+    const worker = await db.getWorkerById(worker_id);
+    if (!worker || worker.user_id !== user.id) {
+      return res.status(404).json({ error: 'Worker not found' });
+    }
+    
+    // Update worker status
+    await db.updateWorker(worker_id, { status: 'idle' });
+    
+    res.json({ success: true, message: 'Worker stopped' });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Restart worker
+router.post('/restart-worker', authenticate, async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user;
+    const { worker_id } = req.body;
+    
+    const worker = await db.getWorkerById(worker_id);
+    if (!worker || worker.user_id !== user.id) {
+      return res.status(404).json({ error: 'Worker not found' });
+    }
+    
+    // Update worker status
+    await db.updateWorker(worker_id, { status: 'running' });
+    
+    res.json({ success: true, message: 'Worker restarted' });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 export default router;
