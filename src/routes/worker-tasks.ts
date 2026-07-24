@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getSupabaseClient } from '../db/supabase';
+import { supabase } from '../db/supabase';
 import { authenticate } from '../middleware/auth';
 
 const router = Router();
@@ -18,7 +18,6 @@ router.get('/:workerId/tasks', authenticate, async (req, res) => {
     }
 
     // Verify worker belongs to user
-    const supabase = getSupabaseClient();
     const { data: worker, error: workerError } = await supabase
       .from('workers')
       .select('id')
