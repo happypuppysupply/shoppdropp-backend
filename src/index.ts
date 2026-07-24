@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import { createServer } from 'http';
 import { WebSocketServer } from 'ws';
+import expressWs from 'express-ws';
 import { config } from './config';
 import { db } from './db/supabase';
 
@@ -27,6 +28,7 @@ import debugRoutes from './routes/debug';
 import openWebNinjaRoutes from './routes/openwebninja';
 import storeConfigRoutes from './routes/store-config';
 import setupRoutes from './routes/setup';
+import wsProxyRoutes from './routes/ws-proxy';
 
 // Services
 import { WorkerManager } from './services/workerManager';
@@ -35,6 +37,10 @@ import { getWorkerCommandQueue } from './services/workerCommands';
 
 const app = express();
 const server = createServer(app);
+
+// Initialize express-ws for WebSocket routes
+const wsApp = expressWs(app, server);
+
 const wss = new WebSocketServer({ server, path: '/ws' });
 const workerManager = new WorkerManager();
 
@@ -67,6 +73,7 @@ app.use('/api/debug', debugRoutes);
 app.use('/api/openwebninja', openWebNinjaRoutes);
 app.use('/api/store-config', storeConfigRoutes);
 app.use('/api/setup', setupRoutes);
+app.use('/ws', wsProxyRoutes);
 
 // Initialize Hetzner service if token is available
 if (process.env.HETZNER_API_TOKEN) {
