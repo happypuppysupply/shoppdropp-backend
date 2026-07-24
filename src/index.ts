@@ -87,18 +87,30 @@ app.get('/health', (req, res) => {
 // WebSocket upgrade handling for /ws/worker/* paths
 server.on('upgrade', async (request, socket, head) => {
   const url = request.url || '';
+  console.log(`[WS-Upgrade] Upgrade request for ${url}`);
   
   // Only handle /ws/worker/* paths for proxy
   if (url.startsWith('/ws/worker/')) {
-    console.log(`[WS-Upgrade] Handling upgrade for ${url}`);
+    console.log(`[WS-Upgrade] Handling worker proxy for ${url}`);
     
     try {
-      // Extract and verify JWT token from query params or headers
-      const token = request.headers['authorization']?.replace('Bearer ', '') || 
-                    new URL(url, 'http://localhost').searchParams.get('token');
+      // Extract and verify JWT token from query params
+      let token: string | null = null;
+      try {
+        const urlObj = new URL(url, 'http://localhost');
+        token = urlObj.searchParams.get('token');
+        console.log(`[WS-Upgrade] Token from query: ${token ? 'present' : 'missing'}`);
+      } catch (e) {
+        console.log('[WS-Upgrade] Failed to parse URL');
+      }
+      
+      if (!token && request.headers['authorization']) {
+        token = request.headers['authorization'].replace('Bearer ', '');
+        console.log('[WS-Upgrade] Token from header');
+      }
       
       if (!token) {
-        console.log('[WS-Upgrade] No token provided');
+        console.log('[WS-Upgrade] No token provided - rejecting');
         socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
         socket.destroy();
         return;
@@ -109,8 +121,9 @@ server.on('upgrade', async (request, socket, head) => {
       try {
         const decoded = jwt.verify(token, process.env.JWT_SECRET || config.jwtSecret) as any;
         userId = decoded.userId || decoded.sub;
+        console.log(`[WS-Upgrade] JWT verified for user: ${userId}`);
       } catch (err) {
-        console.log('[WS-Upgrade] Invalid token');
+        console.log('[WS-Upgrade] Invalid token:', err);
         socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
         socket.destroy();
         return;
@@ -120,6 +133,7 @@ server.on('upgrade', async (request, socket, head) => {
       wss.handleUpgrade(request, socket, head, (ws) => {
         (ws as any).user = { id: userId };
         (ws as any).req = { url, user: { id: userId } };
+        console.log('[WS-Upgrade] Calling handleWsProxy');
         handleWsProxy(ws, (ws as any).req);
       });
       
@@ -132,6 +146,7 @@ server.on('upgrade', async (request, socket, head) => {
   }
   
   // Let the default WSS handle other /ws paths
+  console.log('[WS-Upgrade] Using default WSS handler');
   wss.handleUpgrade(request, socket, head, (ws) => {
     wss.emit('connection', ws, request);
   });
