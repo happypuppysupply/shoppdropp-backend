@@ -95,6 +95,22 @@ export class HetznerService {
     }
   }
 
+  // Create SSH key
+  async createSSHKey(name: string, publicKey: string): Promise<SSHKey> {
+    try {
+      console.log('[Hetzner] Creating SSH key:', name);
+      const response = await this.client.post('/ssh_keys', {
+        name,
+        public_key: publicKey,
+      });
+      console.log('[Hetzner] SSH key created:', response.data.ssh_key?.id);
+      return response.data.ssh_key;
+    } catch (error: any) {
+      console.error('[Hetzner] Create SSH key error:', error.response?.data || error.message);
+      throw new Error(`Failed to create SSH key: ${error.response?.data?.error?.message || error.message}`);
+    }
+  }
+
   // Get key fingerprint
   private async getKeyFingerprint(publicKey: string): Promise<string> {
     const parts = publicKey.trim().split(' ');
