@@ -3,8 +3,7 @@ import { HetznerService, HetznerServerConfig } from './hetznerService';
 import { db, supabase } from '../db/supabase';
 import { OpenClawInstaller } from './openclawInstaller';
 import { v4 as uuidv4 } from 'uuid';
-import * as fs from 'fs';
-import * as path from 'path';
+import { loadSSHKeys, validatePrivateKey } from './sshKeyHelper';
 
 export interface VPSConfig {
   workerId: string;
@@ -29,33 +28,17 @@ export class VPSProvisionerFixed {
   constructor(hetznerService: HetznerService) {
     this.hetzner = hetznerService;
     
-    // Read SSH keys from environment variables (set in Render dashboard)
-    // Supports: SSH_PRIVATE_KEY (with newlines), SSH_PUBLIC_KEY
-    // Fallback to file system for local development
-    const sshPrivateKeyFromEnv = process.env.SSH_PRIVATE_KEY;
-    const sshPublicKeyFromEnv = process.env.SSH_PUBLIC_KEY;
+    // Load SSH keys from env vars or file system
+    const keys = loadSSHKeys();
+    this.sshPrivateKey = keys.privateKey;
+    this.sshPublicKey = keys.publicKey;
     
-    if (sshPrivateKeyFromEnv && sshPublicKeyFromEnv) {
-      // Use keys from environment (properly handle newlines)
-      // Handle both literal \n and actual newlines
-      this.sshPrivateKey = sshPrivateKeyFromEnv.replace(/\\n/g, '\n').trim();
-      this.sshPublicKey = sshPublicKeyFromEnv.trim();
-      console.log('[VPS] Using SSH keys from environment variables');
-      console.log('[VPS] Private key starts with:', this.sshPrivateKey.substring(0, 30));
-    } else {
-      // Fallback to file system - use RSA key (PEM format compatible with node-ssh)
-      // ED25519 in OpenSSH format is NOT supported by node-ssh
-      const sshDir = '/home/markjohnson44la44gigi/.openclaw/workspace/.secrets';
-      try {
-        this.sshPrivateKey = fs.readFileSync(path.join(sshDir, 'shoppdropp_render_rsa'), 'utf8').trim();
-        this.sshPublicKey = fs.readFileSync(path.join(sshDir, 'shoppdropp_render_rsa.pub'), 'utf8').trim();
-        console.log('[VPS] Using RSA SSH keys from file system');
-        console.log('[VPS] Private key format:', this.sshPrivateKey.substring(0, 30));
-      } catch (err) {
-        console.error('[VPS] Failed to read SSH keys from file system:', err);
-        throw new Error('SSH keys not found. Please set SSH_PRIVATE_KEY and SSH_PUBLIC_KEY environment variables, or ensure shoppdropp_render_rsa exists.');
-      }
+    // Validate the key format
+    const validation = validatePrivateKey(this.sshPrivateKey);
+    if (!validation.valid) {
+      throw new Error(`Invalid SSH private key: ${validation.error}`);
     }
+    console.log('[VPS] SSH key validation passed');
   }
 
   async provisionVPS(config: VPSConfig): Promise<ProvisioningResult> {

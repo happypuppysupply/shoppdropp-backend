@@ -1,34 +1,20 @@
 import { NodeSSH } from 'node-ssh';
-import * as fs from 'fs';
-import * as path from 'path';
+import { loadSSHKeys, validatePrivateKey } from './sshKeyHelper';
 
 export class OpenClawInstaller {
   private sshPrivateKey: string;
 
   constructor() {
-    // Read SSH key from environment variables (set in Render dashboard)
-    // Supports: SSH_PRIVATE_KEY (with newlines)
-    // Fallback to file system for local development
-    const sshPrivateKeyFromEnv = process.env.SSH_PRIVATE_KEY;
+    // Load SSH keys from env vars or file system
+    const keys = loadSSHKeys();
+    this.sshPrivateKey = keys.privateKey;
     
-    if (sshPrivateKeyFromEnv) {
-      // Use key from environment (properly handle newlines)
-      // Handle both literal \n and actual newlines, and trim whitespace
-      this.sshPrivateKey = sshPrivateKeyFromEnv.replace(/\\n/g, '\n').trim();
-      console.log('[OpenClaw] Using SSH key from environment variables');
-      console.log('[OpenClaw] Key format:', this.sshPrivateKey.substring(0, 40));
-    } else {
-      // Fallback to file system - use RSA key (PEM format compatible with node-ssh)
-      // ED25519 in OpenSSH format is NOT supported by node-ssh
-      const sshDir = '/home/markjohnson44la44gigi/.openclaw/workspace/.secrets';
-      try {
-        this.sshPrivateKey = fs.readFileSync(path.join(sshDir, 'shoppdropp_render_rsa'), 'utf8').trim();
-        console.log('[OpenClaw] Using RSA SSH key from file system');
-      } catch (err) {
-        console.error('[OpenClaw] Failed to read SSH key:', err);
-        throw new Error('SSH_PRIVATE_KEY environment variable or key file not found');
-      }
+    // Validate the key format
+    const validation = validatePrivateKey(this.sshPrivateKey);
+    if (!validation.valid) {
+      throw new Error(`Invalid SSH private key: ${validation.error}`);
     }
+    console.log('[OpenClaw] SSH key loaded successfully from:', keys.source);
   }
 
   async installOpenClaw(ipAddress: string, config: {
