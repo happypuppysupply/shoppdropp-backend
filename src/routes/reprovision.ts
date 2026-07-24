@@ -20,7 +20,7 @@ router.post('/:workerId/reprovision', authenticate, async (req, res) => {
     }
 
     // Get worker details
-    const worker = await db.getWorker(workerId);
+    const worker = await db.getWorkerById(workerId);
     if (!worker || worker.user_id !== userId) {
       return res.status(404).json({ error: 'Worker not found' });
     }
