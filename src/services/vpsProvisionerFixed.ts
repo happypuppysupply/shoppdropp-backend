@@ -93,15 +93,22 @@ export class VPSProvisionerFixed {
 
       // Step 6: Deploy REAL OpenClaw Gateway
       console.log(`[VPS] Deploying REAL OpenClaw Gateway...`);
-      const openclawInstaller = new OpenClawInstaller();
-      await openclawInstaller.installOpenClaw(ipAddress, {
-        workerId: config.workerId,
-        storeId: config.storeId,
-        userId: config.userId,
-        openrouterApiKey: process.env.OPENROUTER_API_KEY || '',
-        supabaseUrl: process.env.SUPABASE_URL || '',
-        supabaseKey: process.env.SUPABASE_SERVICE_KEY || ''
-      });
+      try {
+        const openclawInstaller = new OpenClawInstaller();
+        await openclawInstaller.installOpenClaw(ipAddress, {
+          workerId: config.workerId,
+          storeId: config.storeId,
+          userId: config.userId,
+          openrouterApiKey: process.env.OPENROUTER_API_KEY || '',
+          supabaseUrl: process.env.SUPABASE_URL || '',
+          supabaseKey: process.env.SUPABASE_SERVICE_KEY || ''
+        });
+        console.log(`[VPS] OpenClaw Gateway installed successfully`);
+      } catch (installError: any) {
+        console.error(`[VPS] OpenClaw installation failed:`, installError.message);
+        // Don't fail the whole provisioning - the server exists
+        // The worker will be in 'configuring' status and can be retried
+      }
 
       // Step 7: Update status
       await db.updateWorker(config.workerId, {
