@@ -7,23 +7,19 @@ export class OpenClawInstaller {
 
   constructor() {
     // Read SSH key from environment variables (set in Render dashboard)
-    // Supports base64 encoded key (SSH_PRIVATE_KEY_BASE64) or plain text
+    // Supports: SSH_PRIVATE_KEY (with newlines)
     // Fallback to file system for local development
-    const sshPrivateKeyBase64 = process.env.SSH_PRIVATE_KEY_BASE64;
+    const sshPrivateKeyFromEnv = process.env.SSH_PRIVATE_KEY;
     
-    if (sshPrivateKeyBase64) {
-      // Decode base64 private key
-      this.sshPrivateKey = Buffer.from(sshPrivateKeyBase64, 'base64').toString('utf8');
-      console.log('[OpenClaw] Using SSH key from environment variables (base64 decoded)');
-    } else if (process.env.SSH_PRIVATE_KEY) {
-      // Fallback to plain text with newline replacement
-      this.sshPrivateKey = process.env.SSH_PRIVATE_KEY.replace(/\\n/g, '\n');
+    if (sshPrivateKeyFromEnv) {
+      // Use key from environment (properly handle newlines)
+      this.sshPrivateKey = sshPrivateKeyFromEnv.replace(/\\n/g, '\n');
       console.log('[OpenClaw] Using SSH key from environment variables');
     } else {
-      // Fallback to file system for local development
+      // Fallback to file system - use ED25519 key that matches Hetzner
       const sshDir = '/home/markjohnson44la44gigi/.openclaw/workspace/.secrets';
-      this.sshPrivateKey = fs.readFileSync(path.join(sshDir, 'shoppdropp_render_rsa'), 'utf8');
-      console.log('[OpenClaw] Using SSH key from file system');
+      this.sshPrivateKey = fs.readFileSync(path.join(sshDir, 'shoppdropp_render_ed25519'), 'utf8');
+      console.log('[OpenClaw] Using SSH key from file system (ED25519)');
     }
   }
 
