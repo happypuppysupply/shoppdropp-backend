@@ -1,6 +1,7 @@
 import { NodeSSH } from 'node-ssh';
 import { HetznerService, HetznerServerConfig } from './hetznerService';
 import { db, supabase } from '../db/supabase';
+import { OpenClawInstaller } from './openclawInstaller';
 import { v4 as uuidv4 } from 'uuid';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -76,9 +77,17 @@ export class VPSProvisionerFixed {
       console.log(`[VPS] Waiting 90 seconds for SSH...`);
       await new Promise(resolve => setTimeout(resolve, 90000));
 
-      // Step 6: Deploy REAL worker
-      console.log(`[VPS] Deploying REAL worker...`);
-      await this.deployRealWorker(ipAddress, config);
+      // Step 6: Deploy REAL OpenClaw Gateway
+      console.log(`[VPS] Deploying REAL OpenClaw Gateway...`);
+      const openclawInstaller = new OpenClawInstaller();
+      await openclawInstaller.installOpenClaw(ipAddress, {
+        workerId: config.workerId,
+        storeId: config.storeId,
+        userId: config.userId,
+        openrouterApiKey: process.env.OPENROUTER_API_KEY || '',
+        supabaseUrl: process.env.SUPABASE_URL || '',
+        supabaseKey: process.env.SUPABASE_SERVICE_KEY || ''
+      });
 
       // Step 7: Update status
       await db.updateWorker(config.workerId, {
