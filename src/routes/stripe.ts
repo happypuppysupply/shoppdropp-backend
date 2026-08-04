@@ -6,10 +6,22 @@ import { config } from '../config';
 import Stripe from 'stripe';
 
 const router = Router();
-const stripe = new Stripe(config.stripe.secretKey, { apiVersion: '2024-06-20' });
+
+// Only initialize Stripe if secret key is configured
+const stripe = config.stripe.secretKey 
+  ? new Stripe(config.stripe.secretKey, { apiVersion: '2024-06-20' })
+  : null;
+
+// Middleware to check if Stripe is configured
+const requireStripe = (req: Request, res: Response, next: Function) => {
+  if (!stripe) {
+    return res.status(503).json({ error: 'Stripe not configured' });
+  }
+  next();
+};
 
 // Create checkout session
-router.post('/checkout', authenticate, [
+router.post('/checkout', authenticate, requireStripe, [
   body('plan').isIn(['growth', 'agency']),
 ], async (req: Request, res: Response) => {
   try {
@@ -20,7 +32,7 @@ router.post('/checkout', authenticate, [
       return res.status(400).json({ error: 'Invalid plan' });
     }
 
-    const session = await stripe.checkout.sessions.create({
+    const session = await stripe!.checkout.sessions.create({
       customer: req.user!.stripe_customer_id!,
       payment_method_types: ['card'],
       line_items: [{
@@ -41,13 +53,13 @@ router.post('/checkout', authenticate, [
 });
 
 // Get subscription status
-router.get('/subscription', authenticate, async (req: Request, res: Response) => {
+router.get('/subscription', authenticate, requireStripe, async (req: Request, res: Response) => {
   try {
     if (!req.user!.stripe_subscription_id) {
       return res.json({ plan: req.user!.plan, status: 'inactive' });
     }
 
-    const subscription = await stripe.subscriptions.retrieve(req.user!.stripe_subscription_id);
+    const subscription = await stripe!.subscriptions.retrieve(req.user!.stripe_subscription_id);
     
     res.json({
       plan: req.user!.plan,
@@ -61,12 +73,12 @@ router.get('/subscription', authenticate, async (req: Request, res: Response) =>
 });
 
 // Webhook
-router.post('/webhook', async (req: Request, res: Response) => {
+router.post('/webhook', requireStripe, async (req: Request, res: Response) => {
   const sig = req.headers['stripe-signature'] as string;
 
   let event;
   try {
-    event = stripe.webhooks.constructEvent(req.body, sig, config.stripe.webhookSecret);
+    event = stripe!.webhooks.constructEvent(req.body, sig, config.stripe.webhookSecret);
   } catch (err: any) {
     return res.status(400).send(`Webhook Error: ${err.message}`);
   }
