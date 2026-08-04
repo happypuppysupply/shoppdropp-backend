@@ -42,9 +42,19 @@ const auth_1 = require("../middleware/auth");
 const config_1 = require("../config");
 const stripe_1 = __importDefault(require("stripe"));
 const router = (0, express_1.Router)();
-const stripe = new stripe_1.default(config_1.config.stripe.secretKey, { apiVersion: '2024-06-20' });
+// Only initialize Stripe if secret key is configured
+const stripe = config_1.config.stripe.secretKey
+    ? new stripe_1.default(config_1.config.stripe.secretKey, { apiVersion: '2024-06-20' })
+    : null;
+// Middleware to check if Stripe is configured
+const requireStripe = (req, res, next) => {
+    if (!stripe) {
+        return res.status(503).json({ error: 'Stripe not configured' });
+    }
+    next();
+};
 // Create checkout session
-router.post('/checkout', auth_1.authenticate, [
+router.post('/checkout', auth_1.authenticate, requireStripe, [
     (0, express_validator_1.body)('plan').isIn(['growth', 'agency']),
 ], async (req, res) => {
     try {
@@ -73,7 +83,7 @@ router.post('/checkout', auth_1.authenticate, [
     }
 });
 // Get subscription status
-router.get('/subscription', auth_1.authenticate, async (req, res) => {
+router.get('/subscription', auth_1.authenticate, requireStripe, async (req, res) => {
     try {
         if (!req.user.stripe_subscription_id) {
             return res.json({ plan: req.user.plan, status: 'inactive' });
@@ -91,7 +101,7 @@ router.get('/subscription', auth_1.authenticate, async (req, res) => {
     }
 });
 // Webhook
-router.post('/webhook', async (req, res) => {
+router.post('/webhook', requireStripe, async (req, res) => {
     const sig = req.headers['stripe-signature'];
     let event;
     try {

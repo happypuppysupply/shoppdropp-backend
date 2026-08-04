@@ -4,6 +4,7 @@ import { db, supabase } from '../db/supabase';
 import { OpenClawInstaller } from './openclawInstaller';
 import { v4 as uuidv4 } from 'uuid';
 import { loadSSHKeys, validatePrivateKey } from './sshKeyHelper';
+import * as fs from 'fs';
 
 export interface VPSConfig {
   workerId: string;

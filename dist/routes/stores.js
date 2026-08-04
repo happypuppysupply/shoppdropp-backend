@@ -6,6 +6,7 @@ const auth_1 = require("../middleware/auth");
 const supabase_1 = require("../db/supabase");
 const uuid_1 = require("uuid");
 const workerManager_1 = require("../services/workerManager");
+const vpsProvisioner_1 = require("../services/vpsProvisioner");
 const router = (0, express_1.Router)();
 const workerManager = new workerManager_1.WorkerManager();
 // Get all stores for user
@@ -37,8 +38,38 @@ router.post('/', auth_1.authenticate, [
             platform: 'shopify',
             status: 'pending',
         });
-        // Provision worker (mock for now)
-        await workerManager.provisionWorker(req.user.id, store.id);
+        // Create worker record first, then provision VPS
+        const worker = await supabase_1.db.createWorker({
+            id: (0, uuid_1.v4)(),
+            user_id: req.user.id,
+            store_id: store.id,
+            status: 'provisioning',
+        });
+        // Provision Hetzner VPS
+        try {
+            const provisioner = (0, vpsProvisioner_1.createVPSProvisioner)();
+            const result = await provisioner.provisionVPS({
+                workerId: worker.id,
+                storeId: store.id,
+                userId: req.user.id,
+                envVars: { STORE_ID: store.id, USER_ID: req.user.id },
+            });
+            if (result.status === 'success') {
+                await supabase_1.db.updateWorker(worker.id, {
+                    hetzner_server_id: String(result.serverId),
+                    ip_address: result.ipAddress,
+                    status: 'running',
+                });
+            }
+            else {
+                await supabase_1.db.updateWorker(worker.id, { status: 'error' });
+            }
+        }
+        catch (provisionErr) {
+            console.error('VPS provisioning failed:', provisionErr);
+            await supabase_1.db.updateWorker(worker.id, { status: 'error' });
+            // Still return store - worker can be retried later
+        }
         res.json(store);
     }
     catch (error) {
