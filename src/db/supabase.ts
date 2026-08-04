@@ -243,6 +243,25 @@ export class Database {
       .single();
     return { data, error };
   }
+
+  // Worker logs
+  async getWorkerLogs(workerId: string): Promise<any[]> {
+    const { data, error } = await supabase
+      .from('worker_logs')
+      .select('*')
+      .eq('worker_id', workerId)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return data || [];
+  }
+
+  async clearWorkerLogs(workerId: string): Promise<void> {
+    const { error } = await supabase
+      .from('worker_logs')
+      .delete()
+      .eq('worker_id', workerId);
+    if (error) throw error;
+  }
 }
 
 export const db = new Database();

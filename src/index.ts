@@ -119,7 +119,7 @@ server.on('upgrade', async (request, socket, head) => {
       // Verify JWT
       let userId: string;
       try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET || config.jwtSecret) as any;
+        const decoded = jwt.verify(token, process.env.JWT_SECRET || config.jwt.secret) as any;
         userId = decoded.userId || decoded.sub;
         console.log(`[WS-Upgrade] JWT verified for user: ${userId}`);
       } catch (err) {

@@ -16,6 +16,15 @@ export interface Store {
     platform: 'shopify';
     worker_id?: string;
     status: 'pending' | 'provisioning' | 'active' | 'error';
+    config_niche?: string;
+    config_target_market?: string;
+    config_product_types?: string[];
+    config_ad_budget?: number;
+    config_ai_budget?: number;
+    config_goals?: string[];
+    config_updated_at?: string;
+    hetzner_server_id?: string | null;
+    ip_address?: string | null;
     created_at: string;
     updated_at: string;
 }
@@ -24,6 +33,8 @@ export interface ApiCredentials {
     store_id: string;
     type: 'shopify' | 'meta_ads' | 'autods' | 'cj_dropshipping' | 'rapidapi';
     encrypted_data: string;
+    service_type?: string;
+    api_key?: string;
     created_at: string;
     updated_at: string;
 }
@@ -31,7 +42,7 @@ export interface Worker {
     id: string;
     user_id: string;
     store_id?: string | null;
-    status: 'idle' | 'assigned' | 'provisioning' | 'configuring' | 'running' | 'error';
+    status: 'idle' | 'assigned' | 'provisioning' | 'configuring' | 'running' | 'error' | 'failed';
     container_id?: string | null;
     ip_address?: string | null;
     hetzner_server_id?: string | null;
@@ -44,6 +55,7 @@ export interface Worker {
     provisioning_progress?: number | null;
     provisioning_logs?: string | null;
     server_ip?: string | null;
+    error_message?: string | null;
     created_at: string;
     updated_at: string;
 }

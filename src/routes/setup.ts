@@ -21,7 +21,6 @@ router.post('/ensure-store', async (req: Request, res: Response) => {
         url: 'https://happypuppysupply.com',
         platform: 'shopify',
         status: 'active',
-        worker_id: null,
       });
       console.log('[Setup] Created store:', store.id);
     } else {

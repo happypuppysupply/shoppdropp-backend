@@ -145,7 +145,7 @@ server.on('upgrade', async (request, socket, head) => {
             // Verify JWT
             let userId;
             try {
-                const decoded = jsonwebtoken_1.default.verify(token, process.env.JWT_SECRET || config_1.config.jwtSecret);
+                const decoded = jsonwebtoken_1.default.verify(token, process.env.JWT_SECRET || config_1.config.jwt.secret);
                 userId = decoded.userId || decoded.sub;
                 console.log(`[WS-Upgrade] JWT verified for user: ${userId}`);
             }

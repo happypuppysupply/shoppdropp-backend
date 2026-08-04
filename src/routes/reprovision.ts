@@ -44,7 +44,7 @@ router.post('/:workerId/reprovision', authenticate, async (req, res) => {
     
     const result = await provisioner.provisionVPS({
       workerId: worker.id,
-      storeId: worker.store_id,
+      storeId: worker.store_id || '',
       userId: worker.user_id,
       envVars: {},
     });

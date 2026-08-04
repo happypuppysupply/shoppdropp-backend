@@ -383,7 +383,7 @@ router.post('/trending', authenticate, [
     // Try to find any configured service
     let serviceCreds = creds.find(c => c.service_type === 'openwebninja_amazon');
     if (!serviceCreds) {
-      serviceCreds = creds.find(c => c.service_type.startsWith('openwebninja_'));
+      serviceCreds = creds.find(c => c.service_type?.startsWith('openwebninja_'));
     }
     
     if (!serviceCreds?.api_key) {

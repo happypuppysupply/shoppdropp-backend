@@ -149,7 +149,7 @@ router.post('/retry-provision/:workerId', async (req: Request, res: Response) =>
     });
     
     // Restart provision in background (don't await)
-    runProvision(workerId, worker.user_id, worker.store_id, { fromStep });
+    runProvision(workerId, worker.user_id, worker.store_id || '', { fromStep });
     
     // Return immediately
     return res.json({

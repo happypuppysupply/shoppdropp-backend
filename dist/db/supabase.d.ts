@@ -29,6 +29,8 @@ export declare class Database {
         data: User | null;
         error: any;
     }>;
+    getWorkerLogs(workerId: string): Promise<any[]>;
+    clearWorkerLogs(workerId: string): Promise<void>;
 }
 export declare const db: Database;
 //# sourceMappingURL=supabase.d.ts.map
