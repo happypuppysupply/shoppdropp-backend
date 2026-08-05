@@ -40,8 +40,18 @@ const server = createServer(app);
 const wss = new WebSocketServer({ server, path: '/ws' });
 const workerManager = new WorkerManager();
 
-// Middleware
-app.use(cors());
+// Middleware - CORS for lendsquid.ai and other allowed origins
+app.use(cors({
+  origin: [
+    'https://lendsquid.ai',
+    'https://www.lendsquid.ai',
+    'https://shoppdropp-blueprint.vercel.app',
+    'http://localhost:3000',
+  ],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+}));
 app.use(express.json());
 
 // Raw body for Stripe webhooks
