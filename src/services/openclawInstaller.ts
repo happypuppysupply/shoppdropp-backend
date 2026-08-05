@@ -51,9 +51,13 @@ export class OpenClawInstaller {
 
       if (!connected) throw new Error('Failed to connect to VPS');
 
-      // Step 1: Install dependencies
+      // Step 1: Install dependencies and Node.js 16+
       console.log('[OpenClaw] Installing dependencies...');
-      await this.runCommand(ssh, 'apt-get update && apt-get install -y curl git nodejs npm docker.io docker-compose', 300000);
+      await this.runCommand(ssh, 'apt-get update', 120000);
+      await this.runCommand(ssh, 'curl -fsSL https://deb.nodesource.com/setup_16.x | bash -', 120000);
+      await this.runCommand(ssh, 'apt-get install -y nodejs curl git docker.io docker-compose', 300000);
+      await this.runCommand(ssh, 'node --version', 10000);
+      console.log('[OpenClaw] Node.js version:', (await ssh.execCommand('node --version')).stdout);
 
       // Step 2: Clone OpenClaw
       console.log('[OpenClaw] Cloning OpenClaw repository...');
@@ -376,8 +380,10 @@ async function pollTasks() {
         .eq('id', task.id);
 
       try {
-        // Execute task
-        const result = await executeTask(task.payload?.task_type, task.payload?.params);
+        // Execute task - fix for older Node.js without optional chaining
+        const taskType = task.payload && task.payload.task_type ? task.payload.task_type : null;
+        const taskParams = task.payload && task.payload.params ? task.payload.params : {};
+        const result = await executeTask(taskType, taskParams);
 
         // Mark as completed
         await supabase
