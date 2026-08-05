@@ -240,7 +240,7 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
 });
 
 // Start server
-server.listen(config.port, () => {
+server.listen(config.port, '0.0.0.0', () => {
   console.log(`🚀 ShoppDropp Backend running on port ${config.port}`);
   console.log(`📡 WebSocket server ready`);
   console.log(`🔧 Environment: ${config.nodeEnv}`);
