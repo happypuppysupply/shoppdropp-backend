@@ -46,6 +46,7 @@ app.use(cors({
     'https://lendsquid.ai',
     'https://www.lendsquid.ai',
     'https://shoppdropp-blueprint.vercel.app',
+    'https://shoppdropp-api.onrender.com',
     'http://localhost:3000',
   ],
   credentials: true,
