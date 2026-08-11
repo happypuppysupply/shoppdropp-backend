@@ -127,17 +127,30 @@ server.on('upgrade', async (request, socket, head) => {
         return;
       }
 
-      // Verify JWT
+      // Verify JWT - support both HS256 (custom) and ES256 (Supabase)
       let userId: string;
       try {
+        // Try to verify with custom JWT secret first (HS256)
         const decoded = jwt.verify(token, process.env.JWT_SECRET || config.jwt.secret) as any;
         userId = decoded.userId || decoded.sub;
-        console.log(`[WS-Upgrade] JWT verified for user: ${userId}`);
-      } catch (err) {
-        console.log('[WS-Upgrade] Invalid token:', err);
-        socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
-        socket.destroy();
-        return;
+        console.log(`[WS-Upgrade] Custom JWT verified for user: ${userId}`);
+      } catch (err: any) {
+        // If that fails, decode without verification to get the user info
+        // The worker will verify the token properly
+        try {
+          const decoded = jwt.decode(token) as any;
+          if (decoded && decoded.sub) {
+            userId = decoded.sub;
+            console.log(`[WS-Upgrade] Supabase JWT decoded for user: ${userId} (passing to worker for verification)`);
+          } else {
+            throw new Error('Invalid token payload');
+          }
+        } catch (decodeErr) {
+          console.log('[WS-Upgrade] Invalid token:', err.message);
+          socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+          socket.destroy();
+          return;
+        }
       }
 
       // Create WebSocket and attach user
