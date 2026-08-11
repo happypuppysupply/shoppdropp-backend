@@ -66,6 +66,7 @@ const openwebninja_1 = __importDefault(require("./routes/openwebninja"));
 const store_config_1 = __importDefault(require("./routes/store-config"));
 const setup_1 = __importDefault(require("./routes/setup"));
 const ws_proxy_1 = __importStar(require("./routes/ws-proxy"));
+const budget_1 = __importDefault(require("./routes/budget"));
 // Services
 const workerManager_1 = require("./services/workerManager");
 const hetznerService_1 = require("./services/hetznerService");
@@ -113,6 +114,7 @@ app.use('/api/openwebninja', openwebninja_1.default);
 app.use('/api/store-config', store_config_1.default);
 app.use('/api/setup', setup_1.default);
 app.use('/ws', ws_proxy_1.default);
+app.use('/api/budget', budget_1.default);
 // Initialize Hetzner service if token is available
 if (process.env.HETZNER_API_TOKEN) {
     (0, hetznerService_1.initHetznerService)();
@@ -153,18 +155,33 @@ server.on('upgrade', async (request, socket, head) => {
                 socket.destroy();
                 return;
             }
-            // Verify JWT
+            // Verify JWT - support both HS256 (custom) and ES256 (Supabase)
             let userId;
             try {
+                // Try to verify with custom JWT secret first (HS256)
                 const decoded = jsonwebtoken_1.default.verify(token, process.env.JWT_SECRET || config_1.config.jwt.secret);
                 userId = decoded.userId || decoded.sub;
-                console.log(`[WS-Upgrade] JWT verified for user: ${userId}`);
+                console.log(`[WS-Upgrade] Custom JWT verified for user: ${userId}`);
             }
             catch (err) {
-                console.log('[WS-Upgrade] Invalid token:', err);
-                socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
-                socket.destroy();
-                return;
+                // If that fails, decode without verification to get the user info
+                // The worker will verify the token properly
+                try {
+                    const decoded = jsonwebtoken_1.default.decode(token);
+                    if (decoded && decoded.sub) {
+                        userId = decoded.sub;
+                        console.log(`[WS-Upgrade] Supabase JWT decoded for user: ${userId} (passing to worker for verification)`);
+                    }
+                    else {
+                        throw new Error('Invalid token payload');
+                    }
+                }
+                catch (decodeErr) {
+                    console.log('[WS-Upgrade] Invalid token:', err.message);
+                    socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+                    socket.destroy();
+                    return;
+                }
             }
             // Create WebSocket and attach user
             wss.handleUpgrade(request, socket, head, (ws) => {

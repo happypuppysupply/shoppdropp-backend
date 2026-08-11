@@ -31,6 +31,9 @@ export declare class Database {
     }>;
     getWorkerLogs(workerId: string): Promise<any[]>;
     clearWorkerLogs(workerId: string): Promise<void>;
+    getBudgetConfig(userId: string): Promise<any>;
+    saveBudgetConfig(userId: string, config: any): Promise<void>;
+    updateBudgetSpend(userId: string, newSpend: number): Promise<void>;
 }
 export declare const db: Database;
 //# sourceMappingURL=supabase.d.ts.map

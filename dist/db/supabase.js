@@ -262,6 +262,55 @@ class Database {
         if (error)
             throw error;
     }
+    // Budget Configuration
+    async getBudgetConfig(userId) {
+        const { data, error } = await exports.supabase
+            .from('budget_configs')
+            .select('*')
+            .eq('user_id', userId)
+            .single();
+        if (error)
+            return null;
+        return {
+            weeklyLimitUsd: data.weekly_limit_usd,
+            weeklySpentUsd: data.weekly_spent_usd,
+            weekStartedAt: data.week_started_at,
+            hardStopAt: data.hard_stop_at,
+            alertThresholds: data.alert_thresholds,
+            maxRequestCostUsd: data.max_request_cost_usd,
+            estimateBuffer: data.estimate_buffer,
+            lastAlertedAt: data.last_alerted_at,
+        };
+    }
+    async saveBudgetConfig(userId, config) {
+        const { error } = await exports.supabase
+            .from('budget_configs')
+            .upsert({
+            user_id: userId,
+            weekly_limit_usd: config.weeklyLimitUsd,
+            weekly_spent_usd: config.weeklySpentUsd,
+            week_started_at: config.weekStartedAt,
+            hard_stop_at: config.hardStopAt,
+            alert_thresholds: config.alertThresholds,
+            max_request_cost_usd: config.maxRequestCostUsd,
+            estimate_buffer: config.estimateBuffer,
+            last_alerted_at: config.lastAlertedAt,
+            updated_at: new Date().toISOString(),
+        });
+        if (error)
+            throw error;
+    }
+    async updateBudgetSpend(userId, newSpend) {
+        const { error } = await exports.supabase
+            .from('budget_configs')
+            .update({
+            weekly_spent_usd: newSpend,
+            updated_at: new Date().toISOString(),
+        })
+            .eq('user_id', userId);
+        if (error)
+            throw error;
+    }
 }
 exports.Database = Database;
 exports.db = new Database();
