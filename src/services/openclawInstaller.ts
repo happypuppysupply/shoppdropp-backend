@@ -54,7 +54,7 @@ export class OpenClawInstaller {
       // Step 1: Install dependencies and Node.js 16+
       console.log('[OpenClaw] Installing dependencies...');
       await this.runCommand(ssh, 'apt-get update', 120000);
-      await this.runCommand(ssh, 'curl -fsSL https://deb.nodesource.com/setup_16.x | bash -', 120000);
+      await this.runCommand(ssh, 'curl -fsSL https://deb.nodesource.com/setup_22.x | bash -', 120000);
       await this.runCommand(ssh, 'apt-get install -y nodejs curl git docker.io docker-compose', 300000);
       await this.runCommand(ssh, 'node --version', 10000);
       console.log('[OpenClaw] Node.js version:', (await ssh.execCommand('node --version')).stdout);
