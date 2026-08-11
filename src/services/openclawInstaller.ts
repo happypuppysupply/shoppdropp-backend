@@ -1,455 +1,247 @@
+/**
+ * OpenClaw Gateway Installer for VPS
+ * Installs and configures OpenClaw on Hetzner VPS
+ */
+
 import { NodeSSH } from 'node-ssh';
-import { loadSSHKeys, validatePrivateKey } from './sshKeyHelper';
 
-export class OpenClawInstaller {
-  private sshPrivateKey: string;
+export interface OpenClawInstallResult {
+  success: boolean;
+  gatewayUrl: string;
+  error?: string;
+}
 
-  constructor() {
-    // Load SSH keys from env vars or file system
-    const keys = loadSSHKeys();
-    this.sshPrivateKey = keys.privateKey;
-    
-    // Validate the key format
-    const validation = validatePrivateKey(this.sshPrivateKey);
-    if (!validation.valid) {
-      throw new Error(`Invalid SSH private key: ${validation.error}`);
-    }
-    console.log('[OpenClaw] SSH key loaded successfully from:', keys.source);
-  }
-
-  async installOpenClaw(ipAddress: string, config: {
-    workerId: string;
-    storeId: string;
+export async function installOpenClawGateway(
+  ssh: NodeSSH,
+  ipAddress: string,
+  config: {
     userId: string;
-    openrouterApiKey: string;
-    supabaseUrl: string;
-    supabaseKey: string;
-  }): Promise<void> {
-    const ssh = new NodeSSH();
-
-    try {
-      console.log(`[OpenClaw] Connecting to ${ipAddress}...`);
-
-      // Connect with retries
-      let connected = false;
-      for (let attempt = 1; attempt <= 10; attempt++) {
-        try {
-          await ssh.connect({
-            host: ipAddress,
-            username: 'root',
-            privateKey: this.sshPrivateKey,
-            readyTimeout: 30000,
-          });
-          connected = true;
-          console.log(`[OpenClaw] Connected on attempt ${attempt}`);
-          break;
-        } catch (err: any) {
-          console.log(`[OpenClaw] SSH attempt ${attempt} failed: ${err.message}`);
-          if (attempt < 10) await new Promise(r => setTimeout(r, 15000));
-        }
+    workerId: string;
+    storeId?: string;
+  }
+): Promise<OpenClawInstallResult> {
+  const gatewayUrl = `http://${ipAddress}:3001`;
+  
+  try {
+    console.log('[OpenClaw] Starting installation...');
+    
+    // Step 1: Update system and install dependencies
+    console.log('[OpenClaw] Installing dependencies...');
+    await ssh.execCommand('apt-get update && apt-get install -y curl git docker.io docker-compose');
+    
+    // Step 2: Install Node.js 22
+    console.log('[OpenClaw] Installing Node.js...');
+    await ssh.execCommand('curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && apt-get install -y nodejs');
+    
+    const nodeVersion = await ssh.execCommand('node --version');
+    console.log('[OpenClaw] Node.js version:', nodeVersion.stdout);
+    
+    // Step 3: Setup OpenClaw directory
+    console.log('[OpenClaw] Setting up OpenClaw structure...');
+    await ssh.execCommand('rm -rf /opt/openclaw && mkdir -p /opt/openclaw/{src,config,logs,workspace}');
+    
+    // Step 4: Create package.json
+    const packageJson = {
+      name: "openclaw-gateway",
+      version: "1.0.0",
+      description: "OpenClaw Gateway Server",
+      main: "src/index.js",
+      scripts: {
+        start: "node src/index.js",
+        dev: "nodemon src/index.js"
+      },
+      dependencies: {
+        "ws": "^8.14.2",
+        "express": "^4.18.2",
+        "cors": "^2.8.5",
+        "uuid": "^9.0.1"
       }
-
-      if (!connected) throw new Error('Failed to connect to VPS');
-
-      // Step 1: Install dependencies and Node.js 16+
-      console.log('[OpenClaw] Installing dependencies...');
-      await this.runCommand(ssh, 'apt-get update', 120000);
-      await this.runCommand(ssh, 'curl -fsSL https://deb.nodesource.com/setup_22.x | bash -', 120000);
-      await this.runCommand(ssh, 'apt-get install -y nodejs curl git docker.io docker-compose', 300000);
-      await this.runCommand(ssh, 'node --version', 10000);
-      console.log('[OpenClaw] Node.js version:', (await ssh.execCommand('node --version')).stdout);
-
-      // Step 2: Clone OpenClaw
-      console.log('[OpenClaw] Cloning OpenClaw repository...');
-      await this.runCommand(ssh, 'rm -rf /opt/openclaw && git clone https://github.com/openclaw/gateway.git /opt/openclaw 2>/dev/null || true', 120000);
-
-      // If clone failed, create minimal OpenClaw structure
-      console.log('[OpenClaw] Setting up OpenClaw structure...');
-      await this.runCommand(ssh, 'mkdir -p /opt/openclaw/{src,config,logs}');
-
-      // Step 3: Create OpenClaw Gateway server
-      console.log('[OpenClaw] Creating Gateway server...');
-      const gatewayServer = this.createGatewayServer(config);
-      await this.writeFile(ssh, '/opt/openclaw/src/server.js', gatewayServer);
-
-      // Step 4: Create package.json
-      const packageJson = JSON.stringify({
-        name: "openclaw-gateway",
-        version: "1.0.0",
-        main: "src/server.js",
-        scripts: {
-          start: "node src/server.js"
-        },
-        dependencies: {
-          "express": "^4.18.2",
-          "ws": "^8.13.0",
-          "cors": "^2.8.5",
-          "axios": "^1.6.0",
-          "@supabase/supabase-js": "^2.38.0"
-        }
-      }, null, 2);
-      await this.writeFile(ssh, '/opt/openclaw/package.json', packageJson);
-
-      // Step 5: Install dependencies
-      console.log('[OpenClaw] Installing Node dependencies...');
-      await this.runCommand(ssh, 'cd /opt/openclaw && npm install', 180000);
-
-      // Step 6: Create systemd service
-      console.log('[OpenClaw] Creating systemd service...');
-      const serviceFile = `[Unit]
-Description=OpenClaw Gateway Server
+    };
+    
+    await ssh.execCommand(`cat > /opt/openclaw/package.json << 'EOF'
+${JSON.stringify(packageJson, null, 2)}
+EOF`);
+    
+    // Step 5: Install npm dependencies
+    console.log('[OpenClaw] Installing npm packages...');
+    await ssh.execCommand('cd /opt/openclaw && npm install');
+    
+    // Step 6: Create the Gateway server
+    console.log('[OpenClaw] Creating Gateway server...');
+    const gatewayCode = createGatewayServerCode(config);
+    await ssh.execCommand(`cat > /opt/openclaw/src/index.js << 'ENDOFFILE'
+${gatewayCode}
+ENDOFFILE`);
+    
+    // Step 7: Create systemd service
+    console.log('[OpenClaw] Creating systemd service...');
+    const systemdService = `[Unit]
+Description=OpenClaw Gateway
 After=network.target
 
 [Service]
 Type=simple
 User=root
 WorkingDirectory=/opt/openclaw
-Environment=NODE_ENV=production
-Environment=OPENROUTER_API_KEY=${config.openrouterApiKey}
-Environment=SUPABASE_URL=${config.supabaseUrl}
-Environment=SUPABASE_KEY=${config.supabaseKey}
-Environment=WORKER_ID=${config.workerId}
-Environment=STORE_ID=${config.storeId}
-Environment=USER_ID=${config.userId}
-ExecStart=/usr/bin/node src/server.js
+ExecStart=/usr/bin/node src/index.js
 Restart=always
 RestartSec=10
-StandardOutput=journal
-StandardError=journal
+Environment=NODE_ENV=production
+Environment=PORT=3001
 
 [Install]
 WantedBy=multi-user.target`;
 
-      await this.writeFile(ssh, '/etc/systemd/system/openclaw-gateway.service', serviceFile);
-
-      // Step 7: Start service
-      console.log('[OpenClaw] Starting Gateway service...');
-      await this.runCommand(ssh, 'systemctl daemon-reload && systemctl enable openclaw-gateway && systemctl start openclaw-gateway');
-
-      // Step 8: Verify
-      await new Promise(r => setTimeout(r, 5000));
-      const status = await ssh.execCommand('systemctl is-active openclaw-gateway');
-      if (status.stdout.trim() === 'active') {
-        console.log('[OpenClaw] ✅ Gateway is active');
-      } else {
-        const logs = await ssh.execCommand('journalctl -u openclaw-gateway --no-pager -n 20');
-        console.error('[OpenClaw] Service failed:\n', logs.stdout);
-        throw new Error('OpenClaw Gateway failed to start');
-      }
-
-      console.log('[OpenClaw] ✅ Installation complete');
-
-    } finally {
-      ssh.dispose();
+    await ssh.execCommand(`cat > /etc/systemd/system/openclaw-gateway.service << 'EOF'
+${systemdService}
+EOF`);
+    
+    // Step 8: Start the service
+    console.log('[OpenClaw] Starting Gateway service...');
+    await ssh.execCommand('systemctl daemon-reload && systemctl enable openclaw-gateway && systemctl start openclaw-gateway');
+    
+    // Step 9: Wait and verify
+    console.log('[OpenClaw] Verifying installation...');
+    await new Promise(resolve => setTimeout(resolve, 5000));
+    
+    const statusCheck = await ssh.execCommand('systemctl is-active openclaw-gateway');
+    if (statusCheck.stdout.trim() !== 'active') {
+      throw new Error('Gateway service failed to start');
     }
+    
+    console.log('[OpenClaw] ✅ Gateway is active');
+    console.log('[OpenClaw] ✅ Installation complete');
+    
+    return {
+      success: true,
+      gatewayUrl,
+    };
+    
+  } catch (error: any) {
+    console.error('[OpenClaw] Installation failed:', error);
+    return {
+      success: false,
+      gatewayUrl,
+      error: error.message,
+    };
   }
+}
 
-  private createGatewayServer(config: any): string {
-    return `const express = require('express');
+function createGatewayServerCode(config: { userId: string; workerId: string; storeId?: string }): string {
+  return `
 const WebSocket = require('ws');
 const http = require('http');
+const express = require('express');
 const cors = require('cors');
-const { createClient } = require('@supabase/supabase-js');
-const axios = require('axios');
+const { v4: uuidv4 } = require('uuid');
 
 const app = express();
-const server = http.createServer(app);
-const wss = new WebSocket.Server({ server, path: '/ws' });
-
-// Config
-const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_KEY = process.env.SUPABASE_KEY;
-const WORKER_ID = process.env.WORKER_ID;
-const STORE_ID = process.env.STORE_ID;
-const USER_ID = process.env.USER_ID;
-
-// Initialize Supabase
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
-
-// Connected clients
-const clients = new Map();
-
 app.use(cors());
 app.use(express.json());
-
-console.log('🚀 OpenClaw Gateway starting...');
-console.log('   Worker ID:', WORKER_ID);
-console.log('   Store ID:', STORE_ID);
 
 // Health check
 app.get('/health', (req, res) => {
   res.json({ 
     status: 'ok', 
-    service: 'openclaw-gateway',
-    worker_id: WORKER_ID,
-    connected_clients: clients.size,
-    timestamp: new Date().toISOString() 
+    type: 'openclaw-gateway',
+    workerId: '${config.workerId}',
+    timestamp: new Date().toISOString()
   });
 });
 
-// Execute task endpoint
-app.post('/execute', async (req, res) => {
-  const { task, params } = req.body;
-  console.log('📥 Task received:', task);
+const server = http.createServer(app);
+const wss = new WebSocket.Server({ server, path: '/ws' });
 
-  try {
-    // Notify all connected clients
-    broadcast({
-      type: 'task_started',
-      task,
-      timestamp: new Date().toISOString()
-    });
+// Connected clients
+const clients = new Map();
 
-    // Execute based on task type
-    let result;
-    if (task === 'product_research') {
-      result = await executeProductResearch(params);
-    } else if (task === 'catalog_sync') {
-      result = await executeCatalogSync(params);
-    } else if (task === 'chat') {
-      result = await executeChat(params);
-    } else {
-      throw new Error('Unknown task: ' + task);
-    }
-
-    res.json({ success: true, result });
-  } catch (error) {
-    console.error('❌ Task failed:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// WebSocket handling
 wss.on('connection', (ws, req) => {
-  const clientId = Date.now().toString();
-  console.log('🔌 Client connected:', clientId);
+  const clientId = uuidv4();
+  console.log('[WS] Client connected:', clientId);
   
-  clients.set(clientId, ws);
+  clients.set(clientId, {
+    ws,
+    connectedAt: new Date(),
+    lastPing: new Date(),
+  });
   
   // Send welcome message
   ws.send(JSON.stringify({
-    type: 'system',
-    message: 'Connected to OpenClaw Gateway',
-    worker_id: WORKER_ID,
-    timestamp: new Date().toISOString()
+    type: 'connected',
+    clientId,
+    workerId: '${config.workerId}',
+    message: 'Connected to OpenClaw Gateway'
   }));
-
-  ws.on('message', async (data) => {
+  
+  ws.on('message', (data) => {
     try {
-      const msg = JSON.parse(data);
-      console.log('📨 Message from client:', msg);
-
-      if (msg.type === 'chat') {
-        // Process chat message with OpenRouter
-        const response = await processChatMessage(msg.content, msg.history);
-        ws.send(JSON.stringify({
-          type: 'chat_response',
-          content: response,
-          timestamp: new Date().toISOString()
-        }));
-      } else if (msg.type === 'execute_task') {
-        // Execute task
-        const result = await executeTask(msg.task, msg.params);
-        ws.send(JSON.stringify({
-          type: 'task_complete',
-          task: msg.task,
-          result,
-          timestamp: new Date().toISOString()
-        }));
-      }
-    } catch (error) {
-      console.error('Error handling message:', error);
+      const message = JSON.parse(data);
+      console.log('[WS] Received:', message.type);
+      
+      // Echo back for testing
       ws.send(JSON.stringify({
-        type: 'error',
-        message: error.message
+        type: 'echo',
+        received: message,
+        timestamp: new Date().toISOString()
       }));
+    } catch (e) {
+      console.error('[WS] Invalid message:', e);
     }
   });
-
+  
   ws.on('close', () => {
-    console.log('🔌 Client disconnected:', clientId);
+    console.log('[WS] Client disconnected:', clientId);
+    clients.delete(clientId);
+  });
+  
+  ws.on('error', (err) => {
+    console.error('[WS] Error:', err);
     clients.delete(clientId);
   });
 });
 
-function broadcast(message) {
-  const data = JSON.stringify(message);
-  clients.forEach((ws) => {
-    if (ws.readyState === WebSocket.OPEN) {
-      ws.send(data);
+// Heartbeat to keep connections alive
+setInterval(() => {
+  clients.forEach((client, id) => {
+    if (client.ws.readyState === WebSocket.OPEN) {
+      client.ws.send(JSON.stringify({ type: 'ping', timestamp: new Date().toISOString() }));
     }
   });
-}
-
-async function processChatMessage(content, history = []) {
-  try {
-    const response = await axios.post('https://openrouter.ai/api/v1/chat/completions', {
-      model: 'anthropic/claude-3.5-sonnet',
-      messages: [
-        { role: 'system', content: 'You are an AI assistant for an e-commerce dropshipping business. Help with product research, pricing, and store management.' },
-        ...history,
-        { role: 'user', content }
-      ]
-    }, {
-      headers: {
-        'Authorization': 'Bearer ' + OPENROUTER_API_KEY,
-        'Content-Type': 'application/json'
-      }
-    });
-
-    return response.data.choices[0].message.content;
-  } catch (error) {
-    console.error('OpenRouter error:', error.message);
-    return 'Sorry, I encountered an error processing your request.';
-  }
-}
-
-async function executeProductResearch(params) {
-  console.log('🔍 Executing product research...');
-  
-  // This would call OpenWeb Ninja APIs
-  // For now, simulate the research
-  const results = {
-    products_found: 45,
-    sources: ['amazon', 'walmart', 'ebay'],
-    top_products: [
-      { title: 'Sample Product 1', price: 29.99, rating: 4.5 },
-      { title: 'Sample Product 2', price: 39.99, rating: 4.2 }
-    ]
-  };
-
-  // Save to database
-  await supabase.from('product_research_results').insert({
-    id: 'res_' + Date.now(),
-    store_id: STORE_ID,
-    user_id: USER_ID,
-    query: params.category || 'trending',
-    products_found: results.products_found,
-    top_products: results.top_products,
-    status: 'completed'
-  });
-
-  return results;
-}
-
-async function executeCatalogSync(params) {
-  console.log('🔄 Executing catalog sync...');
-  return { synced: 50, updated: 10, new: 5 };
-}
-
-async function executeChat(params) {
-  return await processChatMessage(params.message, params.history);
-}
-
-async function executeTask(task, params) {
-  switch (task) {
-    case 'product_research':
-      return await executeProductResearch(params);
-    case 'catalog_sync':
-      return await executeCatalogSync(params);
-    default:
-      throw new Error('Unknown task: ' + task);
-  }
-}
-
-// Poll for tasks from Supabase
-async function pollTasks() {
-  try {
-    const { data: tasks, error } = await supabase
-      .from('worker_commands')
-      .select('*')
-      .eq('worker_id', WORKER_ID)
-      .eq('status', 'pending')
-      .order('created_at', { ascending: true })
-      .limit(1);
-
-    if (error) {
-      console.error('Poll error:', error);
-      return;
-    }
-
-    if (tasks && tasks.length > 0) {
-      const task = tasks[0];
-      console.log('📥 Found pending task:', task.type);
-
-      // Update status to running
-      await supabase
-        .from('worker_commands')
-        .update({ status: 'running', started_at: new Date().toISOString() })
-        .eq('id', task.id);
-
-      try {
-        // Execute task - fix for older Node.js without optional chaining
-        const taskType = task.payload && task.payload.task_type ? task.payload.task_type : null;
-        const taskParams = task.payload && task.payload.params ? task.payload.params : {};
-        const result = await executeTask(taskType, taskParams);
-
-        // Mark as completed
-        await supabase
-          .from('worker_commands')
-          .update({ 
-            status: 'completed', 
-            completed_at: new Date().toISOString(),
-            result
-          })
-          .eq('id', task.id);
-
-        // Notify clients
-        broadcast({
-          type: 'task_complete',
-          task_id: task.id,
-          result
-        });
-
-      } catch (error) {
-        console.error('Task execution failed:', error);
-        await supabase
-          .from('worker_commands')
-          .update({ 
-            status: 'failed', 
-            completed_at: new Date().toISOString(),
-            error: error.message
-          })
-          .eq('id', task.id);
-      }
-    }
-  } catch (error) {
-    console.error('Error in poll loop:', error);
-  }
-}
-
-// Start polling
-setInterval(pollTasks, 10000);
-
-// Start server
-const PORT = process.env.PORT || 8080;
-server.listen(PORT, () => {
-  console.log('✅ OpenClaw Gateway listening on port', PORT);
-});
-
-// Heartbeat to Supabase
-setInterval(async () => {
-  await supabase
-    .from('workers')
-    .update({ last_heartbeat: new Date().toISOString() })
-    .eq('id', WORKER_ID);
 }, 30000);
+
+const PORT = process.env.PORT || 3001;
+server.listen(PORT, '0.0.0.0', () => {
+  console.log('[Gateway] OpenClaw Gateway running on port', PORT);
+  console.log('[Gateway] Worker ID: ${config.workerId}');
+});
 `;
-  }
+}
 
-  private async runCommand(ssh: NodeSSH, command: string, timeoutMs: number = 120000): Promise<void> {
-    console.log(`[SSH] $ ${command.substring(0, 60)}...`);
-    const result = await ssh.execCommand(command, { execOptions: { timeout: timeoutMs } });
-    if (result.code !== 0) {
-      throw new Error(`Command failed: ${result.stderr}`);
+export async function verifyGatewayHealth(ipAddress: string, retries: number = 10): Promise<boolean> {
+  const gatewayUrl = `http://${ipAddress}:3001/health`;
+  
+  for (let i = 0; i < retries; i++) {
+    try {
+      console.log(`[OpenClaw] Health check attempt ${i + 1}/${retries}...`);
+      
+      const response = await fetch(gatewayUrl, { 
+        method: 'GET',
+        signal: AbortSignal.timeout(5000)
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data.status === 'ok' && data.type === 'openclaw-gateway') {
+          console.log('[OpenClaw] ✅ Gateway health check passed');
+          return true;
+        }
+      }
+    } catch (error) {
+      console.log(`[OpenClaw] Health check failed, retrying...`);
     }
+    
+    await new Promise(resolve => setTimeout(resolve, 3000));
   }
-
-  private async writeFile(ssh: NodeSSH, remotePath: string, content: string): Promise<void> {
-    // Use base64 encoding for reliable file transfer
-    const base64Content = Buffer.from(content).toString('base64');
-    await ssh.execCommand(`rm -f ${remotePath}`);
-    await ssh.execCommand(`echo '${base64Content}' | base64 -d > ${remotePath}`);
-  }
+  
+  return false;
 }
