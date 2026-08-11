@@ -4,7 +4,7 @@ import { HetznerService } from '../services/hetznerService';
 import { loadSSHKeys } from '../services/sshKeyHelper';
 import { NodeSSH } from 'node-ssh';
 import { installOpenClawGateway, verifyGatewayHealth } from '../services/openclawInstaller';
-import { db } from '../db/supabase';
+import { db, supabase } from '../db/supabase';
 import { v4 as uuidv4 } from 'uuid';
 
 const router = Router();
@@ -80,7 +80,7 @@ async function runProvision(workerId: string, userId: string, storeId: string) {
     
     // Persist to database
     try {
-      await db.supabase.from('worker_logs').insert({
+      await supabase.from('worker_logs').insert({
         id: uuidv4(),
         worker_id: workerId,
         step_number: stepNumber,

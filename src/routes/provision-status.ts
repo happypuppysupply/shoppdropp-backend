@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { authenticate } from '../middleware/auth';
-import { db } from '../db/supabase';
+import { db, supabase } from '../db/supabase';
 
 const router = Router();
 
@@ -20,7 +20,7 @@ router.get('/status/:workerId', authenticate, async (req: Request, res: Response
     }
 
     // Get provisioning logs
-    const { data: logs, error } = await db.supabase
+    const { data: logs, error } = await supabase
       .from('worker_logs')
       .select('*')
       .eq('worker_id', workerId)

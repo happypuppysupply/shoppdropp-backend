@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { body } from 'express-validator';
 import { authenticate } from '../middleware/auth';
-import { db } from '../db/supabase';
+import { db, supabase } from '../db/supabase';
 import {
   getBudgetConfig,
   setBudgetConfig,
@@ -186,7 +186,7 @@ router.delete('/', authenticate, async (req: Request, res: Response) => {
   try {
     const user = (req as any).user;
     
-    const { error } = await db.supabase
+    const { error } = await supabase
       .from('budget_configs')
       .delete()
       .eq('user_id', user.id);

@@ -1,6 +1,6 @@
 // VPS Debug Provision Route - Deployed Aug 12 2026
 import { Router, Request, Response } from 'express';
-import { db } from '../db/supabase';
+import { db, supabase } from '../db/supabase';
 import { v4 as uuidv4 } from 'uuid';
 import { HetznerService } from '../services/hetznerService';
 import { loadSSHKeys } from '../services/sshKeyHelper';
@@ -181,7 +181,7 @@ async function runProvision(workerId: string, userId: string, storeId: string, o
     
     // Persist to database
     try {
-      await db.supabase.from('worker_logs').insert({
+      await supabase.from('worker_logs').insert({
         id: uuidv4(),
         worker_id: workerId,
         step_number: stepNumber,
