@@ -183,9 +183,9 @@ export class VPSProvisionerFixed {
         throw new Error('Failed to connect after 10 attempts');
       }
 
-      // Install Node.js 20
+      // Install Node.js 22
       console.log(`[SSH] Installing Node.js...`);
-      await this.runCommand(ssh, 'curl -fsSL https://deb.nodesource.com/setup_20.x | bash -', 180000);
+      await this.runCommand(ssh, 'curl -fsSL https://deb.nodesource.com/setup_22.x | bash -', 180000);
       await this.runCommand(ssh, 'DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs', 180000);
 
       // Create directory
