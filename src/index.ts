@@ -30,6 +30,7 @@ import storeConfigRoutes from './routes/store-config';
 import setupRoutes from './routes/setup';
 import wsProxyRoutes, { handleWsProxy } from './routes/ws-proxy';
 import budgetRoutes from './routes/budget';
+import provisionStatusRoutes from './routes/provision-status';
 
 // Services
 import { WorkerManager } from './services/workerManager';
@@ -83,6 +84,7 @@ app.use('/api/store-config', storeConfigRoutes);
 app.use('/api/setup', setupRoutes);
 app.use('/ws', wsProxyRoutes);
 app.use('/api/budget', budgetRoutes);
+app.use('/api/provision', provisionStatusRoutes);
 
 // Initialize Hetzner service if token is available
 if (process.env.HETZNER_API_TOKEN) {
