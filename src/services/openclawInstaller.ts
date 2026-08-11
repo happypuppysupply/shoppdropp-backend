@@ -447,12 +447,9 @@ setInterval(async () => {
   }
 
   private async writeFile(ssh: NodeSSH, remotePath: string, content: string): Promise<void> {
-    // Write file in chunks to avoid command length limits
+    // Use base64 encoding for reliable file transfer
+    const base64Content = Buffer.from(content).toString('base64');
     await ssh.execCommand(`rm -f ${remotePath}`);
-    const lines = content.split('\n');
-    for (const line of lines) {
-      const escaped = line.replace(/'/g, "'\"'\"'").replace(/\\/g, '\\\\');
-      await ssh.execCommand(`echo '${escaped}' >> ${remotePath}`);
-    }
+    await ssh.execCommand(`echo '${base64Content}' | base64 -d > ${remotePath}`);
   }
 }
