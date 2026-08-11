@@ -46,8 +46,8 @@ export async function handleWsProxy(ws: WebSocket, req: Request) {
       return;
     }
 
-    // Connect to VPS OpenClaw Gateway
-    const vpsWsUrl = `ws://${worker.ip_address}:8080/ws`;
+    // Connect to VPS OpenClaw Gateway (runs on port 3001)
+    const vpsWsUrl = `ws://${worker.ip_address}:3001/ws`;
     console.log(`[WS-Proxy] Connecting to VPS at ${vpsWsUrl}`);
 
     const vpsWs = new WebSocket(vpsWsUrl, {
