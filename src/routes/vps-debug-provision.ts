@@ -1,7 +1,10 @@
 import { Router, Request, Response } from 'express';
 import { db } from '../db/supabase';
-import { createVPSProvisioner } from '../services/vpsProvisioner';
 import { v4 as uuidv4 } from 'uuid';
+import { HetznerService } from '../services/hetznerService';
+import { loadSSHKeys } from '../services/sshKeyHelper';
+import { NodeSSH } from 'node-ssh';
+import { installOpenClawGateway, verifyGatewayHealth } from '../services/openclawInstaller';
 
 const router = Router();
 
@@ -170,79 +173,179 @@ router.post('/retry-provision/:workerId', async (req: Request, res: Response) =>
 // Run provision in background
 async function runProvision(workerId: string, userId: string, storeId: string, options?: { fromStep?: string }) {
   const logs: string[] = [];
-  const log = (msg: string) => {
-    const line = `[${new Date().toISOString()}] ${msg}`;
-    console.log(`[Provision ${workerId.slice(0, 8)}] ${msg}`);
+  const logStep = async (stepNumber: number, stepName: string, progress: number, message: string) => {
+    const line = `[${new Date().toISOString()}] Step ${stepNumber}: ${stepName} - ${progress}% - ${message}`;
+    console.log(`[Provision ${workerId.slice(0, 8)}] ${line}`);
     logs.push(line);
+    
+    // Persist to database
+    try {
+      await db.supabase.from('worker_logs').insert({
+        id: uuidv4(),
+        worker_id: workerId,
+        step_number: stepNumber,
+        step_name: stepName,
+        progress,
+        message,
+        created_at: new Date().toISOString(),
+      });
+    } catch (e) {
+      console.error('Failed to persist log:', e);
+    }
   };
   
   activeProvisions.set(workerId, { status: 'running', logs });
   
   if (options?.fromStep) {
-    log(`=== RETRY FROM STEP: ${options.fromStep} ===`);
+    await logStep(0, 'Retry', 0, `=== RETRY FROM STEP: ${options.fromStep} ===`);
   }
   
+  const hetznerToken = process.env.HETZNER_API_TOKEN;
+  if (!hetznerToken) {
+    throw new Error('HETZNER_API_TOKEN not configured');
+  }
+  
+  const hetzner = new HetznerService(hetznerToken);
+  const keys = loadSSHKeys();
+  const serverName = `shoppdropp-worker-${workerId.slice(0, 8)}`;
+  
   try {
-    log('=== PROVISION START ===');
+    await logStep(1, 'Initialize Provisioning', 10, 'Starting VPS provisioning...');
     
-    const provisioner = createVPSProvisioner();
-    
-    // Get AI config
-    let aiConfig;
+    // Step 1: Check for and delete existing server with same name
+    await logStep(1, 'Destroy Old VPS', 20, 'Checking for existing servers...');
     try {
-      aiConfig = await db.getAIConfig(userId);
-      log(`AI config: ${aiConfig ? aiConfig.provider : 'not found'}`);
+      const existingServers = await hetzner.listServers();
+      const existingServer = existingServers.find(s => s.name === serverName);
+      if (existingServer) {
+        await logStep(1, 'Destroy Old VPS', 40, `Deleting existing server ${existingServer.id}...`);
+        await hetzner.deleteServer(existingServer.id);
+        await new Promise(r => setTimeout(r, 5000));
+      }
     } catch (e: any) {
-      log(`Warning: Could not load AI config: ${e.message}`);
+      console.log('No existing server or error:', e.message);
     }
+    await logStep(1, 'Destroy Old VPS', 100, 'Cleanup complete');
     
-    const envVars: Record<string, string> = {};
-    if (aiConfig) {
-      envVars.AI_PROVIDER = aiConfig.provider || 'openrouter';
-      envVars.AI_MODEL = aiConfig.model || 'moonshotai/kimi-k2.5';
-      envVars.AI_API_KEY = aiConfig.api_key_encrypted || '';
+    // Step 2: Upload SSH key to Hetzner
+    await logStep(2, 'Upload SSH Key', 30, 'Ensuring SSH key is uploaded...');
+    const sshKeys = await hetzner.listSSHKeys();
+    let sshKeyId: number;
+    
+    const existingKey = sshKeys.find(k => k.name === 'shoppdropp-render-rsa') || 
+                       sshKeys.find(k => k.name === 'shoppdropp-render');
+    
+    if (existingKey) {
+      sshKeyId = existingKey.id;
+      await logStep(2, 'Upload SSH Key', 80, `Using existing key: ${existingKey.name}`);
+    } else {
+      const newKey = await hetzner.createSSHKey('shoppdropp-render-rsa', keys.publicKey);
+      sshKeyId = newKey.id;
+      await logStep(2, 'Upload SSH Key', 80, `Created new key: ${newKey.id}`);
     }
+    await logStep(2, 'Upload SSH Key', 100, 'SSH key ready');
     
-    log('Starting VPS provision...');
-    const result = await provisioner.provisionVPS({
-      workerId,
-      storeId,
-      userId,
-      envVars,
+    // Step 3: Create Hetzner server
+    await logStep(3, 'Create Hetzner Server', 20, 'Creating server instance...');
+    const server = await hetzner.createServer({
+      name: serverName,
+      server_type: 'cpx12',
+      image: 'ubuntu-22.04',
+      location: 'nbg1',
+      labels: { worker_id: workerId, store_id: storeId, user_id: userId }
+    }, sshKeyId);
+    await logStep(3, 'Create Hetzner Server', 100, `Server ${server.id} created`);
+    
+    // Step 4: Wait for server to be ready
+    await logStep(4, 'Wait for Server Ready', 30, 'Waiting for server to be running...');
+    const readyServer = await hetzner.waitForServerReady(server.id, 180000);
+    const ipAddress = readyServer.public_net.ipv4.ip;
+    await logStep(4, 'Wait for Server Ready', 100, `Server ready at ${ipAddress}`);
+    
+    // Update worker record with server info
+    await db.updateWorker(workerId, {
+      hetzner_server_id: server.id.toString(),
+      ip_address: ipAddress,
+      status: 'configuring',
     });
     
-    log(`Provision result: ${JSON.stringify(result)}`);
+    // Step 5: Wait for SSH to be available
+    await logStep(5, 'Connect via SSH', 10, 'Waiting for SSH service (90s)...');
+    await new Promise(r => setTimeout(r, 90000));
     
-    if (result.status === 'failed') {
-      activeProvisions.set(workerId, {
-        status: 'failed',
-        logs,
-        error: result.error,
-      });
-    } else {
-      activeProvisions.set(workerId, {
-        status: 'completed',
-        logs,
-        result,
-      });
-      
-      // Update store with server info
+    // Step 6: SSH Connect and Install OpenClaw
+    await logStep(5, 'Connect via SSH', 40, 'Connecting via SSH...');
+    const ssh = new NodeSSH();
+    let connected = false;
+    
+    for (let attempt = 1; attempt <= 5; attempt++) {
       try {
-        await db.updateStore(storeId, {
-          hetzner_server_id: result.serverId.toString(),
-          ip_address: result.ipAddress,
+        await logStep(5, 'Connect via SSH', 50 + attempt * 8, `SSH attempt ${attempt}/5...`);
+        await ssh.connect({
+          host: ipAddress,
+          username: 'root',
+          privateKey: keys.privateKey,
+          readyTimeout: 30000,
         });
-        log(`Store ${storeId} updated with server info`);
-      } catch (e: any) {
-        log(`Warning: Failed to update store with server info: ${e.message}`);
+        connected = true;
+        await logStep(5, 'Connect via SSH', 100, `SSH connected on attempt ${attempt}`);
+        break;
+      } catch (err: any) {
+        console.log(`SSH attempt ${attempt} failed:`, err.message);
+        if (attempt < 5) {
+          await new Promise(r => setTimeout(r, 30000));
+        }
       }
     }
     
-    log('=== PROVISION COMPLETE ===');
+    if (!connected) {
+      throw new Error('Failed to connect via SSH after 5 attempts');
+    }
+    
+    // Step 7: Install OpenClaw Gateway
+    await logStep(6, 'Install OpenClaw', 20, 'Installing OpenClaw Gateway...');
+    const installResult = await installOpenClawGateway(ssh, ipAddress, {
+      userId,
+      workerId,
+      storeId
+    });
+    
+    if (!installResult.success) {
+      throw new Error(`OpenClaw installation failed: ${installResult.error}`);
+    }
+    await logStep(6, 'Install OpenClaw', 100, 'OpenClaw Gateway installed');
+    
+    // Step 8: Verify Gateway Health
+    await logStep(7, 'Health Check', 50, 'Verifying OpenClaw Gateway...');
+    const isHealthy = await verifyGatewayHealth(ipAddress, 15);
+    
+    if (!isHealthy) {
+      throw new Error('OpenClaw Gateway health check failed');
+    }
+    await logStep(7, 'Health Check', 100, 'Gateway is healthy');
+    
+    // Step 9: Mark as running
+    await logStep(8, 'Ready', 100, 'VPS worker is ready');
+    await db.updateWorker(workerId, { status: 'running' });
+    
+    // Update store
+    await db.updateStore(storeId, {
+      hetzner_server_id: server.id.toString(),
+      ip_address: ipAddress,
+    });
+    
+    activeProvisions.set(workerId, {
+      status: 'completed',
+      logs,
+      result: { serverId: server.id, ipAddress, gatewayUrl: `http://${ipAddress}:3001` }
+    });
+    
+    console.log(`[Provision ${workerId.slice(0, 8)}] === PROVISION COMPLETE ===`);
     
   } catch (error: any) {
-    log(`CRITICAL ERROR: ${error.message}`);
-    log(`Stack: ${error.stack}`);
+    console.error(`[Provision ${workerId.slice(0, 8)}] CRITICAL ERROR:`, error);
+    
+    await logStep(99, 'Error', 0, `Provisioning failed: ${error.message}`);
     
     activeProvisions.set(workerId, {
       status: 'failed',
@@ -250,11 +353,10 @@ async function runProvision(workerId: string, userId: string, storeId: string, o
       error: error.message,
     });
     
-    // Update worker status to error
     try {
       await db.updateWorker(workerId, { status: 'error' });
     } catch (e) {
-      log(`Failed to update worker status: ${e}`);
+      console.error('Failed to update worker status:', e);
     }
   }
 }
