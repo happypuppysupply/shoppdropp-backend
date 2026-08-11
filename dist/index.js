@@ -74,8 +74,18 @@ const app = (0, express_1.default)();
 const server = (0, http_1.createServer)(app);
 const wss = new ws_1.WebSocketServer({ server, path: '/ws' });
 const workerManager = new workerManager_1.WorkerManager();
-// Middleware
-app.use((0, cors_1.default)());
+// Middleware - CORS for lendsquid.ai and other allowed origins
+app.use((0, cors_1.default)({
+    origin: [
+        'https://lendsquid.ai',
+        'https://www.lendsquid.ai',
+        'https://shoppdropp-blueprint.vercel.app',
+        'http://localhost:3000',
+    ],
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+}));
 app.use(express_1.default.json());
 // Raw body for Stripe webhooks
 app.use('/api/stripe/webhook', express_1.default.raw({ type: 'application/json' }));
@@ -252,7 +262,7 @@ app.use((err, req, res, next) => {
     res.status(500).json({ error: 'Internal server error' });
 });
 // Start server
-server.listen(config_1.config.port, () => {
+server.listen(config_1.config.port, '0.0.0.0', () => {
     console.log(`🚀 ShoppDropp Backend running on port ${config_1.config.port}`);
     console.log(`📡 WebSocket server ready`);
     console.log(`🔧 Environment: ${config_1.config.nodeEnv}`);

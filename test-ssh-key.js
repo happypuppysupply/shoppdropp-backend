@@ -1,0 +1,63 @@
+// Test SSH key format
+const key = `-----BEGIN OPENSSH PRIVATE KEY-----
+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
+-----END OPENSSH PRIVATE KEY-----`;
+
+console.log('Key validation:');
+console.log('- Length:', key.length);
+console.log('- Has BEGIN:', key.includes('-----BEGIN OPENSSH PRIVATE KEY-----'));
+console.log('- Has END:', key.includes('-----END OPENSSH PRIVATE KEY-----'));
+console.log('- Line count:', key.split('\n').length);
+
+// Check if it's valid base64 content between headers
+const lines = key.split('\n');
+const contentLines = lines.slice(1, -1);
+console.log('- Content lines:', contentLines.length);
+console.log('- First content line:', contentLines[0]?.substring(0, 40));
+console.log('- Last content line:', contentLines[contentLines.length-1]?.substring(0, 40));
