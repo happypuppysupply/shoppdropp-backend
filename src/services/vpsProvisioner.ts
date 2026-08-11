@@ -32,9 +32,28 @@ export class VPSProvisioner {
   private sshPublicKey: string;
 
   async provisionVPS(config: VPSConfig): Promise<ProvisioningResult> {
-    const serverName = `shoppdropp-worker-${config.workerId.slice(0, 8)}`;
+    // Generate unique server name with timestamp to avoid collisions
+    const timestamp = Date.now().toString(36).slice(-4);
+    const serverName = `shoppdropp-worker-${config.workerId.slice(0, 8)}-${timestamp}`;
     
     try {
+      // Check if a server with similar name exists and delete it
+      console.log(`[VPS] Checking for existing servers with name pattern...`);
+      try {
+        const existingServers = await this.hetzner.listServers();
+        const similarServer = existingServers.find(s => 
+          s.name.startsWith(`shoppdropp-worker-${config.workerId.slice(0, 8)}`)
+        );
+        if (similarServer) {
+          console.log(`[VPS] Found existing server ${similarServer.name} (${similarServer.id}), deleting...`);
+          await this.hetzner.deleteServer(similarServer.id);
+          console.log(`[VPS] Deleted existing server`);
+          // Wait a moment for deletion to propagate
+          await new Promise(resolve => setTimeout(resolve, 5000));
+        }
+      } catch (e) {
+        console.log(`[VPS] No existing server found or error checking: ${e}`);
+      }
       // Step 1: Create Hetzner server
       await this.logStep(config.workerId, 1, 'Initialize VPS', 10, 'Creating server instance on Hetzner...');
       console.log(`[VPS] Step 1: Creating server ${serverName}...`);
