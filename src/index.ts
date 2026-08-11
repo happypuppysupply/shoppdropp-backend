@@ -29,6 +29,7 @@ import openWebNinjaRoutes from './routes/openwebninja';
 import storeConfigRoutes from './routes/store-config';
 import setupRoutes from './routes/setup';
 import wsProxyRoutes, { handleWsProxy } from './routes/ws-proxy';
+import budgetRoutes from './routes/budget';
 
 // Services
 import { WorkerManager } from './services/workerManager';
@@ -81,6 +82,7 @@ app.use('/api/openwebninja', openWebNinjaRoutes);
 app.use('/api/store-config', storeConfigRoutes);
 app.use('/api/setup', setupRoutes);
 app.use('/ws', wsProxyRoutes);
+app.use('/api/budget', budgetRoutes);
 
 // Initialize Hetzner service if token is available
 if (process.env.HETZNER_API_TOKEN) {

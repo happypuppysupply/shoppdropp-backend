@@ -4,15 +4,35 @@ import { db, supabase } from '../db/supabase';
 import axios from 'axios';
 import { createVPSProvisioner } from '../services/vpsProvisioner';
 import { getWorkerCommandQueue, WORKER_TASKS } from '../services/workerCommands';
+import { canMakeRequest, trackSpend, getBudgetStatus, formatBudgetAlert } from '../services/budgetGuard';
 
 const router = Router();
 
 // OpenRouter API client
-async function callOpenRouter(messages: any[], apiKey: string, model: string = 'moonshotai/kimi-k2.5') {
+async function callOpenRouter(
+  messages: any[],
+  apiKey: string,
+  model: string = 'moonshotai/kimi-k2.5',
+  userId?: string
+) {
   console.log('Calling OpenRouter with model:', model, 'key length:', apiKey?.length);
   
   if (!apiKey || apiKey.length < 10) {
     throw new Error('Invalid API key provided');
+  }
+  
+  // Budget guard check (if userId provided)
+  if (userId) {
+    const guardResult = await canMakeRequest(userId, model, apiKey);
+    
+    if (!guardResult.allowed) {
+      const error = new Error(guardResult.reason || 'Budget limit reached');
+      (error as any).isBudgetError = true;
+      (error as any).guardResult = guardResult;
+      throw error;
+    }
+    
+    console.log(`[Budget] Request allowed. Estimated: $${guardResult.estimatedCost?.toFixed(4)}`);
   }
   
   try {
@@ -33,8 +53,46 @@ async function callOpenRouter(messages: any[], apiKey: string, model: string = '
         },
       }
     );
+    
+    // Track actual spend
+    if (userId && response.data?.usage) {
+      const usage = response.data.usage;
+      // Calculate cost based on actual tokens
+      const pricing: Record<string, { input: number; output: number }> = {
+        'moonshotai/kimi-k2.5': { input: 0.002, output: 0.008 },
+        'moonshotai/kimi-k2.6': { input: 0.003, output: 0.012 },
+        'anthropic/claude-3.5-sonnet': { input: 0.003, output: 0.015 },
+        'openai/gpt-4o': { input: 0.005, output: 0.015 },
+        'openai/gpt-4o-mini': { input: 0.00015, output: 0.0006 },
+      };
+      
+      const modelPricing = pricing[model] || pricing['moonshotai/kimi-k2.5'];
+      const inputCost = (usage.prompt_tokens / 1000) * modelPricing.input;
+      const outputCost = (usage.completion_tokens / 1000) * modelPricing.output;
+      const actualCost = inputCost + outputCost;
+      
+      const trackResult = await trackSpend(userId, actualCost, model);
+      console.log(`[Budget] Tracked spend: $${actualCost.toFixed(4)}, Total: $${trackResult.newTotal.toFixed(4)}`);
+      
+      // Check if threshold crossed and include alert in response
+      if (trackResult.thresholdCrossed) {
+        const status = await getBudgetStatus(userId);
+        if (status) {
+          (response.data as any).budgetAlert = formatBudgetAlert(
+            trackResult.thresholdCrossed,
+            trackResult.newTotal,
+            status.weeklyLimit,
+            status.resetsAt
+          );
+        }
+      }
+    }
+    
     return response.data.choices[0].message;
   } catch (error: any) {
+    // Re-throw budget errors as-is
+    if (error.isBudgetError) throw error;
+    
     console.error('OpenRouter API error:', error.response?.data || error.message);
     throw new Error(error.response?.data?.error?.message || 'Failed to get AI response');
   }
@@ -151,8 +209,8 @@ router.post('/chat', authenticate, async (req: Request, res: Response) => {
       { role: 'user', content: message },
     ];
 
-    // Call OpenRouter
-    const aiResponse = await callOpenRouter(messages, aiConfig.api_key_encrypted, aiConfig.model);
+    // Call OpenRouter (with budget guard)
+    const aiResponse = await callOpenRouter(messages, aiConfig.api_key_encrypted, aiConfig.model, user.id);
 
     // Parse for commands (using [[COMMAND]] format)
     let commandResult = null;
@@ -177,15 +235,34 @@ router.post('/chat', authenticate, async (req: Request, res: Response) => {
       }
     }
 
+    // Check for budget alert from the response
+    const budgetAlert = (aiResponse as any).budgetAlert;
+    
     res.json({
       response: aiResponse.content,
       command_executed: commandResult,
       worker_status: activeWorker?.status || 'none',
       store: activeStore?.name || null,
+      budget_alert: budgetAlert || null,
     });
 
   } catch (error: any) {
     console.error('AI chat error:', error);
+    
+    // Handle budget guard errors specially
+    if (error.isBudgetError) {
+      const guardResult = error.guardResult;
+      return res.status(429).json({
+        error: 'Budget limit reached',
+        budget_error: true,
+        reason: guardResult.reason,
+        remaining: guardResult.remaining,
+        suggestion: guardResult.suggestion,
+        resets_at: guardResult.resetsAt?.toISOString(),
+        percentage_used: guardResult.percentageUsed,
+      });
+    }
+    
     res.status(500).json({ error: error.message || 'Failed to process chat' });
   }
 });
