@@ -3,6 +3,7 @@ import { HetznerService, HetznerServerConfig } from './hetznerService';
 import { db, supabase } from '../db/supabase';
 import { v4 as uuidv4 } from 'uuid';
 import { loadSSHKeys } from './sshKeyHelper';
+import { installOpenClawGateway, verifyGatewayHealth } from './openclawInstaller';
 
 export interface VPSConfig {
   workerId: string;
