@@ -160,13 +160,20 @@ router.post('/chat', authenticate, async (req: Request, res: Response) => {
 
     // Get user's AI config
     const aiConfig = await db.getAIConfig(user.id);
-    console.log('AI Config retrieved:', aiConfig ? { provider: aiConfig.provider, model: aiConfig.model, hasKey: !!aiConfig.api_key_encrypted } : 'null');
+    console.log('AI Config retrieved:', aiConfig ? { 
+      provider: aiConfig.provider, 
+      model: aiConfig.model, 
+      hasKey: !!aiConfig.api_key_encrypted,
+      keyLength: aiConfig.api_key_encrypted?.length,
+      keyPrefix: aiConfig.api_key_encrypted?.substring(0, 10) + '...'
+    } : 'null');
     
     if (!aiConfig) {
       return res.status(400).json({ error: 'AI provider not configured. Please set up OpenRouter in settings.' });
     }
 
     if (!aiConfig.api_key_encrypted) {
+      console.error('AI API key is missing for user:', user.id);
       return res.status(400).json({ error: 'AI API key not found. Please reconfigure your AI provider in settings.' });
     }
 
@@ -564,6 +571,55 @@ router.post('/restart-worker', authenticate, async (req: Request, res: Response)
     await db.updateWorker(worker_id, { status: 'running' });
     
     res.json({ success: true, message: 'Worker restarted' });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// DEBUG: Test AI configuration and API key
+router.get('/debug-ai-config', authenticate, async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user;
+    const aiConfig = await db.getAIConfig(user.id);
+    
+    if (!aiConfig) {
+      return res.json({ configured: false, message: 'No AI config found' });
+    }
+    
+    // Test the API key with a simple request
+    let apiTestResult = null;
+    let apiTestError = null;
+    
+    if (aiConfig.api_key_encrypted) {
+      try {
+        const testResponse = await axios.get('https://openrouter.ai/api/v1/auth/key', {
+          headers: {
+            'Authorization': `Bearer ${aiConfig.api_key_encrypted}`,
+          },
+          timeout: 5000,
+        });
+        apiTestResult = {
+          valid: true,
+          data: testResponse.data,
+        };
+      } catch (error: any) {
+        apiTestResult = {
+          valid: false,
+          status: error.response?.status,
+          error: error.response?.data?.error?.message || error.message,
+        };
+      }
+    }
+    
+    res.json({
+      configured: true,
+      provider: aiConfig.provider,
+      model: aiConfig.model,
+      keyLength: aiConfig.api_key_encrypted?.length || 0,
+      keyPrefix: aiConfig.api_key_encrypted ? `${aiConfig.api_key_encrypted.substring(0, 15)}...` : null,
+      keySuffix: aiConfig.api_key_encrypted ? `...${aiConfig.api_key_encrypted.slice(-5)}` : null,
+      apiTest: apiTestResult,
+    });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
