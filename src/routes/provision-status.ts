@@ -19,7 +19,7 @@ router.get('/status/:workerId', authenticate, async (req: Request, res: Response
       return res.status(404).json({ error: 'Worker not found' });
     }
 
-    // Get provisioning logs
+    // Get provisioning logs (without type filter - column doesn't exist)
     const { data: logs, error } = await supabase
       .from('worker_logs')
       .select('*')
