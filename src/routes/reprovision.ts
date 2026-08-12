@@ -211,13 +211,13 @@ async function runProvision(workerId: string, userId: string, storeId: string) {
     
     // Step 9: Mark as running
     await logStep(8, 'Ready', 100, 'VPS worker is ready');
-    await db.updateWorker(workerId, { status: 'running' });
-    
-    // Update store
-    await db.updateStore(storeId, {
+    await db.updateWorker(workerId, { 
+      status: 'running',
       hetzner_server_id: server.id.toString(),
       ip_address: ipAddress,
     });
+    
+    // Store server info is tracked in workers table, not stores table
     
     activeProvisions.set(workerId, {
       status: 'completed',
