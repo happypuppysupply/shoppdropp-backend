@@ -105,6 +105,38 @@ server.on('upgrade', async (request, socket, head) => {
   console.log(`[WS-Upgrade] Upgrade request for ${url}`);
   
   // Only handle /ws/worker/* paths for proxy
+  if (url.startsWith('/ws/ai-chat')) {
+    // Import dynamically to avoid circular deps
+    const { handleAIChatWebSocket } = await import('./routes/ai-chat-ws');
+    
+    // Extract token
+    let token: string | null = null;
+    try {
+      const urlObj = new URL(url, 'http://localhost');
+      token = urlObj.searchParams.get('token');
+    } catch (e) {}
+    
+    if (!token) {
+      socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+      socket.destroy();
+      return;
+    }
+    
+    try {
+      const decoded = jwt.verify(token, process.env.JWT_SECRET || config.jwt.secret) as any;
+      const userId = decoded.userId || decoded.sub;
+      
+      wss.handleUpgrade(request, socket, head, (ws) => {
+        handleAIChatWebSocket(ws, userId);
+      });
+      return;
+    } catch (err) {
+      socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+      socket.destroy();
+      return;
+    }
+  }
+  
   if (url.startsWith('/ws/worker/')) {
     console.log(`[WS-Upgrade] Handling worker proxy for ${url}`);
     
