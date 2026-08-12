@@ -66,7 +66,7 @@ async function handleChatMessage(ws: WebSocket, userId: string, message: any) {
       .eq('id', userId)
       .single();
 
-    const apiKey = configData?.api_key || userData?.ai_api_key;
+    const apiKey = configData?.api_key_encrypted || configData?.api_key || userData?.ai_api_key;
     
     if (!apiKey) {
       ws.send(JSON.stringify({
