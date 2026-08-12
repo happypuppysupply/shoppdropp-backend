@@ -55,14 +55,25 @@ router.post('/:workerId/reprovision', authenticate, async (req, res) => {
       ip_address: null,
     });
 
-    // Start provision in background
-    runProvision(workerId, userId, worker.store_id || '');
-
-    res.json({
-      success: true,
-      message: 'VPS reprovisioning started',
-      workerId: workerId,
-    });
+    // Run provision synchronously and wait for completion
+    const result = await runProvision(workerId, userId, worker.store_id || '');
+    
+    if (result.success) {
+      res.json({
+        success: true,
+        message: 'VPS provisioning completed',
+        workerId: workerId,
+        server_id: result.serverId,
+        ip_address: result.ipAddress,
+        gateway_url: result.gatewayUrl,
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        error: result.error,
+        workerId: workerId,
+      });
+    }
 
   } catch (err: any) {
     console.error('Reprovision error:', err);
@@ -71,7 +82,7 @@ router.post('/:workerId/reprovision', authenticate, async (req, res) => {
 });
 
 // Run provision in background
-async function runProvision(workerId: string, userId: string, storeId: string) {
+async function runProvision(workerId: string, userId: string, storeId: string): Promise<{ success: boolean; serverId?: number; ipAddress?: string; gatewayUrl?: string; error?: string }> {
   const logs: string[] = [];
   const logStep = async (stepNumber: number, stepName: string, progress: number, message: string) => {
     const line = `[${new Date().toISOString()}] Step ${stepNumber}: ${stepName} - ${progress}% - ${message}`;
@@ -227,6 +238,13 @@ async function runProvision(workerId: string, userId: string, storeId: string) {
     
     console.log(`[Provision ${workerId.slice(0, 8)}] === PROVISION COMPLETE ===`);
     
+    return {
+      success: true,
+      serverId: server.id,
+      ipAddress,
+      gatewayUrl: `http://${ipAddress}:3001`
+    };
+    
   } catch (error: any) {
     console.error(`[Provision ${workerId.slice(0, 8)}] CRITICAL ERROR:`, error);
     
@@ -243,6 +261,11 @@ async function runProvision(workerId: string, userId: string, storeId: string) {
     } catch (e) {
       console.error('Failed to update worker status:', e);
     }
+    
+    return {
+      success: false,
+      error: error.message
+    };
   }
 }
 
