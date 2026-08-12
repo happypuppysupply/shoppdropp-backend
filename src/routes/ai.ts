@@ -19,7 +19,7 @@ const DEFAULT_MODELS: Record<string, string> = {
 
 // Configure AI provider
 router.post(
-  '/configure',
+  '/config',
   authenticate,
   body('provider').isIn(VALID_PROVIDERS).withMessage('Invalid provider'),
   body('model').notEmpty().withMessage('Model is required'),
