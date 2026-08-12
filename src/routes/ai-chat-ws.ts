@@ -1,4 +1,4 @@
-import { WebSocket } from 'ws';
+import WebSocket from 'ws';
 import { supabase } from '../db/supabase';
 import axios from 'axios';
 
@@ -16,7 +16,7 @@ export function handleAIChatWebSocket(ws: WebSocket, userId: string) {
   const connectionId = `${userId}-${Date.now()}`;
   chatConnections.set(connectionId, ws);
 
-  ws.on('message', async (data: WebSocket.Data) => {
+  ws.on('message', async (data) => {
     try {
       const message = JSON.parse(data.toString());
       

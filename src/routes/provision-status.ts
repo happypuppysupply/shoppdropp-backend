@@ -24,7 +24,6 @@ router.get('/status/:workerId', authenticate, async (req: Request, res: Response
       .from('worker_logs')
       .select('*')
       .eq('worker_id', workerId)
-      .eq('type', 'provision_step')
       .order('created_at', { ascending: true });
 
     if (error) throw error;
