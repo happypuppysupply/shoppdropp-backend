@@ -125,21 +125,10 @@ async function runProvision(workerId: string, userId: string, storeId: string) {
     
     // Step 2: Upload SSH key to Hetzner
     await logStep(2, 'Upload SSH Key', 30, 'Ensuring SSH key is uploaded...');
-    const sshKeys = await hetzner.listSSHKeys();
-    let sshKeyId: number;
     
-    const existingKey = sshKeys.find(k => k.name === 'shoppdropp-render-rsa') || 
-                       sshKeys.find(k => k.name === 'shoppdropp-render');
-    
-    if (existingKey) {
-      sshKeyId = existingKey.id;
-      await logStep(2, 'Upload SSH Key', 80, `Using existing key: ${existingKey.name}`);
-    } else {
-      const newKey = await hetzner.createSSHKey('shoppdropp-render-rsa', keys.publicKey);
-      sshKeyId = newKey.id;
-      await logStep(2, 'Upload SSH Key', 80, `Created new key: ${newKey.id}`);
-    }
-    await logStep(2, 'Upload SSH Key', 100, 'SSH key ready');
+    // Use uploadSSHKey which handles duplicates properly (checks by name and fingerprint)
+    const sshKeyId = await hetzner.uploadSSHKey('shoppdropp-render-rsa', keys.publicKey);
+    await logStep(2, 'Upload SSH Key', 100, `SSH key ready (ID: ${sshKeyId})`);
     
     // Step 3: Create Hetzner server
     await logStep(3, 'Create Hetzner Server', 20, 'Creating server instance...');

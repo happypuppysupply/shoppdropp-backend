@@ -99,6 +99,28 @@ router.post('/', authenticate, async (req: Request, res: Response) => {
   }
 });
 
+// Get single worker by ID
+router.get('/:id', authenticate, async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user;
+    const worker = await db.getWorkerById(req.params.id);
+    if (!worker || worker.user_id !== user.id) {
+      return res.status(404).json({ error: 'Worker not found' });
+    }
+    res.json({
+      id: worker.id,
+      store_id: worker.store_id,
+      status: worker.status,
+      hetzner_server_id: worker.hetzner_server_id,
+      ip_address: worker.ip_address,
+      last_heartbeat: worker.last_heartbeat,
+      created_at: worker.created_at,
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch worker' });
+  }
+});
+
 // Get worker status
 router.get('/:id/status', authenticate, async (req: Request, res: Response) => {
   try {
