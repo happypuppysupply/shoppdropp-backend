@@ -41,38 +41,15 @@ router.post('/', authenticate, [
       status: 'pending',
     });
 
-    // Create worker record first, then provision VPS
+    // Create worker record in idle state - user must manually provision
     const worker = await db.createWorker({
       id: uuidv4(),
       user_id: req.user!.id,
       store_id: store.id,
-      status: 'provisioning',
+      status: 'idle',  // Changed from 'provisioning' - user must click "Provision" manually
     });
 
-    // Provision Hetzner VPS
-    try {
-      const provisioner = createVPSProvisioner();
-      const result = await provisioner.provisionVPS({
-        workerId: worker.id,
-        storeId: store.id,
-        userId: req.user!.id,
-        envVars: { STORE_ID: store.id, USER_ID: req.user!.id },
-      });
-
-      if (result.status === 'success') {
-        await db.updateWorker(worker.id, {
-          hetzner_server_id: String(result.serverId),
-          ip_address: result.ipAddress,
-          status: 'running',
-        });
-      } else {
-        await db.updateWorker(worker.id, { status: 'error' });
-      }
-    } catch (provisionErr: any) {
-      console.error('VPS provisioning failed:', provisionErr);
-      await db.updateWorker(worker.id, { status: 'error' });
-      // Still return store - worker can be retried later
-    }
+    // NOTE: Auto-provisioning removed - user must trigger via dashboard
 
     res.json(store);
   } catch (error) {
