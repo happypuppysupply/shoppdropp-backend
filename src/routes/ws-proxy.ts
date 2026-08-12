@@ -46,9 +46,40 @@ export async function handleWsProxy(ws: WebSocket, req: Request) {
       return;
     }
 
+    // First verify HTTP health endpoint is accessible
+    const healthUrl = `http://${worker.ip_address}:3001/health`;
+    console.log(`[WS-Proxy] Checking Gateway health at ${healthUrl}`);
+    
+    try {
+      const healthResponse = await fetch(healthUrl, { 
+        method: 'GET',
+        signal: AbortSignal.timeout(10000)
+      });
+      
+      if (!healthResponse.ok) {
+        console.log(`[WS-Proxy] Gateway health check failed: ${healthResponse.status}`);
+        ws.send(JSON.stringify({ 
+          type: 'error', 
+          message: `Gateway not healthy: ${healthResponse.status}` 
+        }));
+        ws.close(1011, 'Gateway not healthy');
+        return;
+      }
+      
+      console.log(`[WS-Proxy] Gateway health check passed`);
+    } catch (error: any) {
+      console.log(`[WS-Proxy] Gateway health check error:`, error.message);
+      ws.send(JSON.stringify({ 
+        type: 'error', 
+        message: `Cannot reach Gateway: ${error.message}` 
+      }));
+      ws.close(1011, 'Cannot reach Gateway');
+      return;
+    }
+
     // Connect to VPS OpenClaw Gateway (runs on port 3001)
     const vpsWsUrl = `ws://${worker.ip_address}:3001/ws`;
-    console.log(`[WS-Proxy] Connecting to VPS at ${vpsWsUrl}`);
+    console.log(`[WS-Proxy] Connecting to VPS WebSocket at ${vpsWsUrl}`);
 
     const vpsWs = new WebSocket(vpsWsUrl, {
       handshakeTimeout: 10000,
