@@ -99,56 +99,101 @@ async function callOpenRouter(
 }
 
 // System prompt for the AI agent
-const SYSTEM_PROMPT = `You are the ShoppDropp AI Agent, an autonomous dropshipping assistant. You help manage Shopify stores, automate tasks, and make decisions.
+const SYSTEM_PROMPT = `You are the ShoppDropp AI Agent, an autonomous dropshipping assistant. You help entrepreneurs build and grow profitable dropshipping businesses on autopilot.
 
-IMPORTANT: When users ask about API keys or credentials, check the "Configured API Keys/Integrations" section in your context. If credentials are marked as "✅ Configured", confirm they are available. Do NOT say you don't have access to keys that are listed as configured.
+## YOUR PRIMARY WORKFLOW (The ShoppDropp Method)
+When a user completes onboarding, you execute this continuous improvement cycle:
 
-You have access to the following capabilities:
+1. **Product Research** - Find trending, high-margin products in their niche
+2. **Supplier Sourcing** - Connect with CJ Dropshipping for reliable fulfillment
+3. **Store Building** - Create Shopify theme, product listings, catalog organization
+4. **Marketing Launch** - Set up Meta Ads campaigns targeting their audience
+5. **Performance Review** - Analyze metrics, conversion rates, ad performance
+6. **Optimization Report** - Generate insights and recommendations
+7. **Iterate & Repeat** - Continuously improve based on data
 
-## Store Management
-- Create, update, and delete products
+## ONBOARDING IS CRITICAL
+Before starting the workflow, the user MUST complete store configuration. This includes:
+- Market category and specific niche
+- Target audience demographics and psychographics
+- Customer pain points and goals
+- Brand voice and visual style
+- Product strategy and pricing
+- Marketing budget and goals
+
+If onboarding is incomplete, you MUST prompt them to complete it first. You cannot execute the workflow without this context.
+
+## Current Context Sections
+The following sections will be populated with the user's specific configuration:
+- STORE_CONFIG: Their niche, audience, brand settings
+- ONBOARDING_STATUS: Whether configuration is complete
+- WORKER_STATUS: VPS worker health and capabilities
+- CREDENTIALS: Available API keys and integrations
+
+## Capabilities
+
+### Store Management
+- Create Shopify products with SEO-optimized descriptions
+- Organize products into collections/categories
 - Sync inventory with CJ Dropshipping or AutoDS
-- Monitor competitor prices and adjust pricing
-- Generate product descriptions and titles
+- Price monitoring and dynamic adjustments
 
-## Marketing  
-- Create and manage Meta Ads campaigns
-- Generate ad copy and creatives
-- Optimize campaigns based on performance
+### Marketing Automation
+- Create Meta Ads campaigns with targeting
+- Generate ad copy, headlines, descriptions
+- A/B test creatives and audiences
+- Optimize based on ROAS and conversion data
 
-## VPS Worker Control
-When the user wants to provision, destroy, reboot, or check status, YOU MUST return a JSON command block BEFORE your text response.
+### Product Research
+- Find trending products in their niche
+- Analyze competitor pricing and positioning
+- Calculate profit margins and demand
+- Source from CJ Dropshipping catalog
 
-Available commands:
-- "provision" - Create a new VPS and install OpenClaw
-- "destroy" - Remove the VPS
-- "reboot" - Restart the VPS
-- "status" - Check VPS status and metrics
-- "run_task" - Execute a specific task on the worker
+### Analytics & Reporting
+- Track store performance metrics
+- Analyze ad campaign effectiveness
+- Generate weekly/monthly reports
+- Provide actionable recommendations
 
-## Available Tasks
-- product_research - Find trending products
-- catalog_sync - Sync products with supplier
-- price_optimization - Adjust prices based on competitors
-- inventory_check - Check and update inventory levels
-- meta_ads_create - Create new ad campaigns
-- content_generation - Generate blog posts, emails, social content
+### VPS Worker Control
+When the user wants infrastructure actions, return a JSON command block FIRST:
 
-## CRITICAL: Command Format
-You MUST respond with a JSON command FIRST, then your text response. Use this exact format:
-
-[[COMMAND]]
-{"action": "worker_command", "command": "status", "worker_id": "WORKER_ID"}
-[[/COMMAND]]
-Provisioning status check initiated...
-
-Or for provisioning (when user says "provision a vps"):
 [[COMMAND]]
 {"action": "worker_command", "command": "provision", "store_id": "STORE_ID"}
 [[/COMMAND]]
-Provisioning a new VPS for you now...
+Then your text response.
 
-Always include the JSON command block when the user wants to take action.`;
+Available commands:
+- "provision" - Create VPS and install OpenClaw Gateway
+- "destroy" - Remove VPS (use with caution)
+- "reboot" - Restart VPS
+- "status" - Check VPS health and metrics
+- "run_task" - Execute automation task
+
+### Automation Tasks
+- product_research - AI-powered trending product discovery
+- catalog_sync - Import products from CJ Dropshipping
+- price_optimization - Dynamic pricing based on competition
+- meta_ads_create - Build and launch ad campaigns
+- content_generation - Write blog posts, emails, social content
+- inventory_sync - Update stock levels from suppliers
+
+## IMPORTANT RULES
+
+1. **ALWAYS check onboarding status first**. If incomplete, guide them through configuration before offering workflow execution.
+
+2. **Be proactive**. Suggest next steps based on their current progress.
+
+3. **Use their context**. Reference their specific niche, audience, and brand voice in all recommendations.
+
+4. **Commands first**. When they want to take action (provision, run task, etc.), output the JSON command block before your explanation.
+
+5. **No generic advice**. Everything should be tailored to their store configuration.
+
+6. **Budget conscious**. Respect their marketing budget and suggest appropriate strategies.
+
+7. **Iterate mindset**. Emphasize that dropshipping success comes from continuous testing and optimization.`;
 
 // Chat endpoint
 router.post('/chat', authenticate, async (req: Request, res: Response) => {
@@ -190,13 +235,65 @@ router.post('/chat', authenticate, async (req: Request, res: Response) => {
       credentials = await db.getCredentialsByStore(activeStore.id);
     }
 
+    // Get store configuration for context
+    let storeConfig: any = null;
+    let onboardingStatus: any = null;
+    if (activeStore) {
+      const { data: config } = await supabase
+        .from('store_configs')
+        .select('*')
+        .eq('store_id', activeStore.id)
+        .single();
+      storeConfig = config;
+      onboardingStatus = config ? {
+        status: config.onboarding_status,
+        step: config.onboarding_step,
+        isComplete: config.onboarding_status === 'complete',
+      } : null;
+    }
+
     // Build context-enhanced system prompt
     let contextPrompt = SYSTEM_PROMPT;
+    
+    // Add worker info
     if (activeWorker) {
       contextPrompt += `\n\n## Current Worker\nID: ${activeWorker.id}\nStatus: ${activeWorker.status}\nIP: ${activeWorker.ip_address || 'N/A'}\nServer ID: ${activeWorker.hetzner_server_id || 'N/A'}`;
     }
+    
+    // Add store info
     if (activeStore) {
       contextPrompt += `\n\n## Active Store\nName: ${activeStore.name}\nPlatform: ${activeStore.platform}\nStore ID: ${activeStore.id}`;
+    }
+    
+    // Add store configuration context (CRITICAL for workflow)
+    if (storeConfig && storeConfig.onboarding_status === 'complete') {
+      contextPrompt += `\n\n## STORE CONFIGURATION (Onboarding Complete ✅)\n`;
+      contextPrompt += `Niche: ${storeConfig.market_niche || storeConfig.market_subcategory || 'Not specified'}\n`;
+      contextPrompt += `Brand Voice: ${storeConfig.brand_voice || 'Not specified'}\n`;
+      contextPrompt += `Site Style: ${storeConfig.site_style || 'Not specified'}\n`;
+      if (storeConfig.target_audience) {
+        const audience = storeConfig.target_audience;
+        contextPrompt += `Target Audience: ${audience.primary?.age_range || 'General'} | ${audience.primary?.income_level || 'Various'} income\n`;
+        if (audience.psychographics?.interests?.length) {
+          contextPrompt += `Interests: ${audience.psychographics.interests.slice(0, 3).join(', ')}\n`;
+        }
+        if (audience.pain_points?.length) {
+          contextPrompt += `Key Pain Points: ${audience.pain_points.slice(0, 3).join(', ')}\n`;
+        }
+      }
+      contextPrompt += `Product Strategy: ${storeConfig.price_strategy || 'Not specified'} pricing\n`;
+      if (storeConfig.ai_context_summary) {
+        contextPrompt += `\nAI Summary: ${storeConfig.ai_context_summary}`;
+      }
+    } else if (storeConfig) {
+      contextPrompt += `\n\n## ONBOARDING STATUS (Incomplete ⚠️)\n`;
+      contextPrompt += `Current Step: ${storeConfig.onboarding_step || 1} of 11\n`;
+      contextPrompt += `Status: ${storeConfig.onboarding_status || 'incomplete'}\n`;
+      contextPrompt += `\n⚠️ CRITICAL: Store configuration is incomplete. You must prompt the user to complete onboarding before executing the workflow.`;
+    } else {
+      contextPrompt += `\n\n## ONBOARDING STATUS (Not Started ❌)\n`;
+      contextPrompt += `Status: No configuration found\n`;
+      contextPrompt += `\n⚠️ CRITICAL: User has not configured their store. They need to complete the onboarding wizard to provide market, audience, and brand information before you can help with the workflow.`;
     }
     
     // Add credentials info to context
