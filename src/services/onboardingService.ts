@@ -160,8 +160,8 @@ export class OnboardingService {
     if (stepNumber === 7) {
       return [
         { id: 'professional', name: 'Professional', description: 'Expert, trustworthy, authoritative', example: 'We deliver proven solutions for your needs.' },
-        { id: 'friendly', name: 'Friendly', description: 'Warm, approachable, conversational', example: 'Hey there! We''re so glad you stopped by!' },
-        { id: 'playful', name: 'Playful', description: 'Fun, energetic, humorous', example: 'Ready to level up? Let''s make shopping fun again!' },
+        { id: 'friendly', name: 'Friendly', description: 'Warm, approachable, conversational', example: "Hey there! We're so glad you stopped by!" },
+        { id: 'playful', name: 'Playful', description: 'Fun, energetic, humorous', example: "Ready to level up? Let's make shopping fun again!" },
         { id: 'luxury', name: 'Luxury', description: 'Sophisticated, exclusive, elegant', example: 'Experience the epitome of refined quality.' },
         { id: 'edgy', name: 'Edgy', description: 'Bold, daring, provocative', example: 'Break the rules. Stand out from the crowd.' },
         { id: 'minimal', name: 'Minimal', description: 'Clean, simple, direct', example: 'Quality products. No compromises.' },
@@ -218,7 +218,7 @@ export class OnboardingService {
         { id: 'makeup_tools', name: 'Makeup Tools', description: 'Brushes, sponges, organizers', trending: true },
         { id: 'bath_body', name: 'Bath & Body', description: 'Soaps, scrubs, bath accessories', trending: false },
         { id: 'oral_care', name: 'Oral Care', description: 'Electric brushes, flossers, whitening', trending: true },
-        { id: 'mens_grooming', name: 'Men''s Grooming', description: 'Beard care, skincare, tools', trending: true },
+        { id: 'mens_grooming', name: "Men's Grooming", description: 'Beard care, skincare, tools', trending: true },
       ],
       fitness_wellness: [
         { id: 'home_gym', name: 'Home Gym Equipment', description: 'Weights, bands, mats', trending: true },
@@ -236,8 +236,8 @@ export class OnboardingService {
   }
 
   // Generate demographics options based on niche
-  private generateDemographicsOptions(existingData: StoreConfigData): any[] {
-    const baseOptions = {
+  private generateDemographicsOptions(existingData: StoreConfigData): any {
+    return {
       age_ranges: [
         { id: '18-24', name: '18-24', description: 'Gen Z, college students, young professionals' },
         { id: '25-34', name: '25-34', description: 'Millennials, establishing careers' },
@@ -260,8 +260,6 @@ export class OnboardingService {
         { id: 'eu', name: 'Europe', description: 'Diverse markets, good potential' },
       ],
     };
-
-    return baseOptions;
   }
 
   // Generate pain points based on niche

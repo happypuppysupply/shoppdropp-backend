@@ -10,6 +10,8 @@ export const supabase = createClient(config.supabase.url, config.supabase.servic
 });
 
 export class Database {
+  // Expose supabase client for direct access
+  supabase = supabase;
   // Users
   async getUserById(id: string): Promise<User | null> {
     const { data, error } = await supabase
