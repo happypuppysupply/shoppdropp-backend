@@ -12,18 +12,29 @@ router.get('/', authenticate, async (req: Request, res: Response) => {
     const user = (req as any).user;
     const storeId = req.query.store_id as string;
     
+    // Fast query - only get necessary fields, limit to 1 result
+    const { data: workers, error } = await db.supabase
+      .from('workers')
+      .select('id, store_id, status, hetzner_server_id, ip_address, last_heartbeat, created_at')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+      .limit(10);
+    
+    if (error) {
+      console.error('Failed to fetch workers:', error);
+      return res.status(500).json({ error: 'Failed to fetch workers' });
+    }
+    
     let worker = null;
-    let recent_tasks: any[] = [];
     
-    // Get all workers for user and filter by store if needed
-    const workers = await db.getWorkersByUser(user.id);
-    
-    if (storeId) {
-      // Filter by store_id
-      worker = workers.find(w => w.store_id === storeId) || null;
-    } else {
-      // Get first active worker (running, configuring, or provisioning)
-      worker = workers.find(w => ['running', 'configuring', 'provisioning'].includes(w.status)) || workers[0] || null;
+    if (workers && workers.length > 0) {
+      if (storeId) {
+        // Filter by store_id
+        worker = workers.find(w => w.store_id === storeId) || null;
+      } else {
+        // Get first active worker (running, configuring, or provisioning)
+        worker = workers.find(w => ['running', 'configuring', 'provisioning'].includes(w.status)) || workers[0];
+      }
     }
     
     // Format worker for frontend
@@ -45,7 +56,7 @@ router.get('/', authenticate, async (req: Request, res: Response) => {
     
     res.json({
       worker: formattedWorker,
-      recent_tasks: recent_tasks
+      recent_tasks: []
     });
   } catch (error) {
     console.error('Failed to fetch workers:', error);
