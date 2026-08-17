@@ -59,14 +59,22 @@ async function handleChatMessage(ws: WebSocket, userId: string, message: any) {
       .eq('user_id', userId)
       .single();
 
-    // Get user's API key
+    // Get user's API key (personal key)
     const { data: userData } = await supabase
       .from('users')
       .select('ai_api_key')
       .eq('id', userId)
       .single();
 
-    const apiKey = configData?.api_key_encrypted || configData?.api_key || userData?.ai_api_key;
+    // Check if user has personal API key OR use platform key
+    let apiKey = configData?.api_key_encrypted || configData?.api_key || userData?.ai_api_key;
+    let usingPlatformKey = false;
+    
+    // If no personal key, check if user has enabled platform AI
+    if (!apiKey && configData?.use_platform_ai) {
+      apiKey = process.env.OPENROUTER_API_KEY;
+      usingPlatformKey = true;
+    }
     
     if (!apiKey) {
       ws.send(JSON.stringify({
@@ -76,6 +84,8 @@ async function handleChatMessage(ws: WebSocket, userId: string, message: any) {
       }));
       return;
     }
+    
+    console.log(`[AI-Chat-WS] Using ${usingPlatformKey ? 'platform' : 'personal'} API key for user ${userId}`);
 
     const model = configData?.model || 'moonshotai/kimi-k2.5';
     

@@ -23,11 +23,10 @@ router.post(
   authenticate,
   body('provider').isIn(VALID_PROVIDERS).withMessage('Invalid provider'),
   body('model').notEmpty().withMessage('Model is required'),
-  body('apiKey').notEmpty().withMessage('API key is required'),
   async (req: Request, res: Response) => {
     try {
       const user = (req as any).user;
-      const { provider, model, apiKey } = req.body;
+      const { provider, model, apiKey, usePlatformAI } = req.body;
 
       // Validate the provider/model combo exists
       const validModels = getValidModels(provider);
@@ -35,18 +34,25 @@ router.post(
         return res.status(400).json({ error: `Invalid model for ${provider}` });
       }
 
-      // Save encrypted to database
+      // If using platform AI, verify platform key exists
+      if (usePlatformAI && !process.env.OPENROUTER_API_KEY) {
+        return res.status(400).json({ error: 'Platform AI not available. Please use your own API key.' });
+      }
+
+      // Save config - apiKey is optional if using platform AI
       await db.saveAIConfig(user.id, {
         provider,
         model,
-        apiKey, // Will be encrypted by db layer
+        apiKey: apiKey || null,
+        usePlatformAI: usePlatformAI || false,
       });
 
       res.json({ 
         success: true, 
-        message: 'AI provider configured',
+        message: usePlatformAI ? 'Using ShoppDropp AI' : 'AI provider configured',
         provider,
         model,
+        usePlatformAI: usePlatformAI || false,
       });
     } catch (error: any) {
       console.error('AI config error:', error);

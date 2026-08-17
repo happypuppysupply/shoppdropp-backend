@@ -217,10 +217,21 @@ router.post('/chat', authenticate, async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'AI provider not configured. Please set up OpenRouter in settings.' });
     }
 
-    if (!aiConfig.api_key_encrypted) {
+    // Determine which API key to use: personal or platform
+    let apiKey = aiConfig.api_key_encrypted;
+    let usingPlatformKey = false;
+    
+    if (!apiKey && aiConfig.use_platform_ai) {
+      apiKey = process.env.OPENROUTER_API_KEY;
+      usingPlatformKey = true;
+    }
+    
+    if (!apiKey) {
       console.error('AI API key is missing for user:', user.id);
       return res.status(400).json({ error: 'AI API key not found. Please reconfigure your AI provider in settings.' });
     }
+    
+    console.log(`Using ${usingPlatformKey ? 'platform' : 'personal'} API key for user ${user.id}`);
 
     // Get user's worker/store info for context
     const workers = await db.getWorkersByUser(user.id);
@@ -314,7 +325,7 @@ router.post('/chat', authenticate, async (req: Request, res: Response) => {
     ];
 
     // Call OpenRouter (with budget guard)
-    const aiResponse = await callOpenRouter(messages, aiConfig.api_key_encrypted, aiConfig.model, user.id);
+    const aiResponse = await callOpenRouter(messages, apiKey, aiConfig.model, user.id);
 
     // Parse for commands (using [[COMMAND]] format)
     let commandResult = null;

@@ -180,16 +180,27 @@ export class Database {
   }
 
   // AI Configuration
-  async saveAIConfig(userId: string, config: { provider: string; model: string; apiKey: string }): Promise<any> {
+  async saveAIConfig(userId: string, config: { provider: string; model: string; apiKey?: string | null; usePlatformAI?: boolean }): Promise<any> {
+    const updateData: any = {
+      user_id: userId,
+      provider: config.provider,
+      model: config.model,
+      updated_at: new Date().toISOString(),
+    };
+    
+    // Only set api_key_encrypted if provided (allows using platform AI)
+    if (config.apiKey !== undefined) {
+      updateData.api_key_encrypted = config.apiKey; // TODO: Add actual encryption
+    }
+    
+    // Set use_platform_ai flag
+    if (config.usePlatformAI !== undefined) {
+      updateData.use_platform_ai = config.usePlatformAI;
+    }
+    
     const { data, error } = await supabase
       .from('ai_configs')
-      .upsert({
-        user_id: userId,
-        provider: config.provider,
-        model: config.model,
-        api_key_encrypted: config.apiKey, // TODO: Add actual encryption
-        updated_at: new Date().toISOString(),
-      })
+      .upsert(updateData)
       .select()
       .single();
     if (error) throw error;
@@ -203,7 +214,10 @@ export class Database {
       .eq('user_id', userId)
       .single();
     if (error) return null;
-    return data;
+    return {
+      ...data,
+      use_platform_ai: data?.use_platform_ai || false,
+    };
   }
 
   // User Credentials (GitHub, Vercel, etc.)
