@@ -181,12 +181,23 @@ export class Database {
 
   // AI Configuration
   async saveAIConfig(userId: string, config: { provider: string; model: string; apiKey?: string | null; usePlatformAI?: boolean }): Promise<any> {
+    // First check if config already exists for this user
+    const { data: existing } = await supabase
+      .from('ai_configs')
+      .select('id')
+      .eq('user_id', userId)
+      .single();
+    
     const updateData: any = {
-      user_id: userId,
       provider: config.provider,
       model: config.model,
       updated_at: new Date().toISOString(),
     };
+    
+    // Only set user_id for new inserts
+    if (!existing) {
+      updateData.user_id = userId;
+    }
     
     // Only set api_key_encrypted if provided (allows using platform AI)
     if (config.apiKey !== undefined) {
@@ -199,24 +210,51 @@ export class Database {
     }
     
     try {
-      const { data, error } = await supabase
-        .from('ai_configs')
-        .upsert(updateData)
-        .select()
-        .single();
-      if (error) throw error;
-      return data;
+      let result;
+      if (existing) {
+        // Update existing row
+        const { data, error } = await supabase
+          .from('ai_configs')
+          .update(updateData)
+          .eq('user_id', userId)
+          .select()
+          .single();
+        if (error) throw error;
+        result = data;
+      } else {
+        // Insert new row
+        const { data, error } = await supabase
+          .from('ai_configs')
+          .insert(updateData)
+          .select()
+          .single();
+        if (error) throw error;
+        result = data;
+      }
+      return result;
     } catch (err: any) {
       // If use_platform_ai column doesn't exist, retry without it
       if (err.message?.includes('use_platform_ai')) {
         delete updateData.use_platform_ai;
-        const { data, error } = await supabase
-          .from('ai_configs')
-          .upsert(updateData)
-          .select()
-          .single();
-        if (error) throw error;
-        return { ...data, use_platform_ai: config.usePlatformAI || false };
+        
+        if (existing) {
+          const { data, error } = await supabase
+            .from('ai_configs')
+            .update(updateData)
+            .eq('user_id', userId)
+            .select()
+            .single();
+          if (error) throw error;
+          return { ...data, use_platform_ai: config.usePlatformAI || false };
+        } else {
+          const { data, error } = await supabase
+            .from('ai_configs')
+            .insert(updateData)
+            .select()
+            .single();
+          if (error) throw error;
+          return { ...data, use_platform_ai: config.usePlatformAI || false };
+        }
       }
       throw err;
     }
