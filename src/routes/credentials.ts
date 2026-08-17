@@ -27,12 +27,15 @@ router.post(
 
       // Encrypt and save credentials
       const credentialData = {
+        store_id: storeId,
+        type,
         api_key: apiKey,
         api_secret: apiSecret,
         ...additionalData,
+        updated_at: new Date().toISOString(),
       };
 
-      await db.saveStoreCredentials(storeId, type, credentialData);
+      await db.upsertCredentials(credentialData);
 
       res.json({
         success: true,
