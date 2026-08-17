@@ -1,6 +1,6 @@
 /**
- * OpenClaw Gateway Installer for VPS
- * Installs and configures OpenClaw on Hetzner VPS
+ * REAL OpenClaw Installer for VPS
+ * Clones and configures the actual OpenClaw agent
  */
 
 import { NodeSSH } from 'node-ssh';
@@ -23,71 +23,92 @@ export async function installOpenClawGateway(
   const gatewayUrl = `http://${ipAddress}:3001`;
   
   try {
-    console.log('[OpenClaw] Starting installation...');
+    console.log('[OpenClaw] Starting REAL OpenClaw installation...');
     
     // Step 1: Update system and install dependencies
-    console.log('[OpenClaw] Installing dependencies...');
-    await ssh.execCommand('apt-get update && apt-get install -y curl git docker.io docker-compose');
+    console.log('[OpenClaw] Installing system dependencies...');
+    await ssh.execCommand('apt-get update && apt-get install -y curl git build-essential python3 python3-pip');
     
-    // Step 2: Install Node.js 22
-    console.log('[OpenClaw] Installing Node.js...');
-    await ssh.execCommand('curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && apt-get install -y nodejs');
+    // Step 2: Install Node.js 20 (OpenClaw requires this)
+    console.log('[OpenClaw] Installing Node.js 20...');
+    await ssh.execCommand('curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && apt-get install -y nodejs');
     
     const nodeVersion = await ssh.execCommand('node --version');
     console.log('[OpenClaw] Node.js version:', nodeVersion.stdout);
     
-    // Step 3: Setup OpenClaw directory
-    console.log('[OpenClaw] Setting up OpenClaw structure...');
-    await ssh.execCommand('rm -rf /opt/openclaw && mkdir -p /opt/openclaw/{src,config,logs,workspace}');
+    // Step 3: Install OpenClaw globally via npm
+    console.log('[OpenClaw] Installing OpenClaw CLI...');
+    await ssh.execCommand('npm install -g openclaw');
     
-    // Step 4: Create package.json
-    const packageJson = {
-      name: "openclaw-gateway",
-      version: "1.0.0",
-      description: "OpenClaw Gateway Server",
-      main: "src/index.js",
-      scripts: {
-        start: "node src/index.js",
-        dev: "nodemon src/index.js"
+    // Step 4: Create OpenClaw workspace
+    console.log('[OpenClaw] Setting up workspace...');
+    await ssh.execCommand('mkdir -p /opt/openclaw-workspace && cd /opt/openclaw-workspace && openclaw init --yes');
+    
+    // Step 5: Create configuration file (answers the setup questions automatically)
+    console.log('[OpenClaw] Creating configuration...');
+    const openclawConfig = {
+      workspace: "/opt/openclaw-workspace",
+      defaultModel: "openrouter/moonshotai/kimi-k2.5",
+      gateway: {
+        port: 3001,
+        host: "0.0.0.0"
       },
-      dependencies: {
-        "ws": "^8.14.2",
-        "express": "^4.18.2",
-        "cors": "^2.8.5",
-        "uuid": "^9.0.1"
+      skills: {
+        autoLoad: true,
+        enabled: [
+          "browser-automation",
+          "canvas", 
+          "web-search",
+          "web-fetch",
+          "healthcheck"
+        ]
+      },
+      security: {
+        confirmDestructive: false,
+        allowRemoteExecution: true
+      },
+      worker: {
+        id: config.workerId,
+        userId: config.userId,
+        storeId: config.storeId
       }
     };
     
-    await ssh.execCommand(`cat > /opt/openclaw/package.json << 'EOF'
-${JSON.stringify(packageJson, null, 2)}
+    await ssh.execCommand(`cat > /opt/openclaw-workspace/.openclaw/config.json << 'EOF'
+${JSON.stringify(openclawConfig, null, 2)}
 EOF`);
     
-    // Step 5: Install npm dependencies
-    console.log('[OpenClaw] Installing npm packages...');
-    await ssh.execCommand('cd /opt/openclaw && npm install');
+    // Step 6: Create bootstrap script that starts OpenClaw
+    console.log('[OpenClaw] Creating bootstrap script...');
+    const bootstrapScript = `#!/bin/bash
+export OPENCLAW_WORKSPACE=/opt/openclaw-workspace
+export OPENCLAW_PORT=3001
+export OPENCLAW_HOST=0.0.0.0
+cd /opt/openclaw-workspace
+exec openclaw gateway --port 3001 --host 0.0.0.0
+`;
     
-    // Step 6: Create the Gateway server
-    console.log('[OpenClaw] Creating Gateway server...');
-    const gatewayCode = createGatewayServerCode(config);
-    await ssh.execCommand(`cat > /opt/openclaw/src/index.js << 'ENDOFFILE'
-${gatewayCode}
-ENDOFFILE`);
+    await ssh.execCommand(`cat > /opt/openclaw-workspace/start.sh << 'EOF'
+${bootstrapScript}
+EOF`);
+    await ssh.execCommand('chmod +x /opt/openclaw-workspace/start.sh');
     
     // Step 7: Create systemd service
     console.log('[OpenClaw] Creating systemd service...');
     const systemdService = `[Unit]
-Description=OpenClaw Gateway
+Description=OpenClaw Agent Gateway
 After=network.target
 
 [Service]
 Type=simple
 User=root
-WorkingDirectory=/opt/openclaw
-ExecStart=/usr/bin/node src/index.js
+WorkingDirectory=/opt/openclaw-workspace
+ExecStart=/opt/openclaw-workspace/start.sh
 Restart=always
 RestartSec=10
 Environment=NODE_ENV=production
-Environment=PORT=3001
+Environment=OPENCLAW_WORKSPACE=/opt/openclaw-workspace
+Environment=OPENCLAW_PORT=3001
 
 [Install]
 WantedBy=multi-user.target`;
@@ -97,20 +118,26 @@ ${systemdService}
 EOF`);
     
     // Step 8: Start the service
-    console.log('[OpenClaw] Starting Gateway service...');
+    console.log('[OpenClaw] Starting OpenClaw service...');
     await ssh.execCommand('systemctl daemon-reload && systemctl enable openclaw-gateway && systemctl start openclaw-gateway');
     
-    // Step 9: Wait and verify
-    console.log('[OpenClaw] Verifying installation...');
-    await new Promise(resolve => setTimeout(resolve, 5000));
+    // Step 9: Wait for OpenClaw to initialize
+    console.log('[OpenClaw] Waiting for initialization...');
+    await new Promise(resolve => setTimeout(resolve, 10000));
     
-    const statusCheck = await ssh.execCommand('systemctl is-active openclaw-gateway');
-    if (statusCheck.stdout.trim() !== 'active') {
-      throw new Error('Gateway service failed to start');
+    // Step 10: Verify health
+    console.log('[OpenClaw] Verifying installation...');
+    const isHealthy = await verifyGatewayHealth(ipAddress, 15);
+    
+    if (!isHealthy) {
+      // Check logs for errors
+      const logs = await ssh.execCommand('journalctl -u openclaw-gateway --no-pager -n 50');
+      console.error('[OpenClaw] Service logs:', logs.stdout);
+      throw new Error('OpenClaw health check failed - check logs above');
     }
     
-    console.log('[OpenClaw] ✅ Gateway is active');
-    console.log('[OpenClaw] ✅ Installation complete');
+    console.log('[OpenClaw] ✅ Real OpenClaw installed and running');
+    console.log('[OpenClaw] ✅ Gateway URL:', gatewayUrl);
     
     return {
       success: true,
@@ -127,97 +154,7 @@ EOF`);
   }
 }
 
-function createGatewayServerCode(config: { userId: string; workerId: string; storeId?: string }): string {
-  return `
-const WebSocket = require('ws');
-const http = require('http');
-const express = require('express');
-const cors = require('cors');
-const { v4: uuidv4 } = require('uuid');
-
-const app = express();
-app.use(cors());
-app.use(express.json());
-
-// Health check
-app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'ok', 
-    type: 'openclaw-gateway',
-    workerId: '${config.workerId}',
-    timestamp: new Date().toISOString()
-  });
-});
-
-const server = http.createServer(app);
-const wss = new WebSocket.Server({ server, path: '/ws' });
-
-// Connected clients
-const clients = new Map();
-
-wss.on('connection', (ws, req) => {
-  const clientId = uuidv4();
-  console.log('[WS] Client connected:', clientId);
-  
-  clients.set(clientId, {
-    ws,
-    connectedAt: new Date(),
-    lastPing: new Date(),
-  });
-  
-  // Send welcome message
-  ws.send(JSON.stringify({
-    type: 'connected',
-    clientId,
-    workerId: '${config.workerId}',
-    message: 'Connected to OpenClaw Gateway'
-  }));
-  
-  ws.on('message', (data) => {
-    try {
-      const message = JSON.parse(data);
-      console.log('[WS] Received:', message.type);
-      
-      // Echo back for testing
-      ws.send(JSON.stringify({
-        type: 'echo',
-        received: message,
-        timestamp: new Date().toISOString()
-      }));
-    } catch (e) {
-      console.error('[WS] Invalid message:', e);
-    }
-  });
-  
-  ws.on('close', () => {
-    console.log('[WS] Client disconnected:', clientId);
-    clients.delete(clientId);
-  });
-  
-  ws.on('error', (err) => {
-    console.error('[WS] Error:', err);
-    clients.delete(clientId);
-  });
-});
-
-// Heartbeat to keep connections alive
-setInterval(() => {
-  clients.forEach((client, id) => {
-    if (client.ws.readyState === WebSocket.OPEN) {
-      client.ws.send(JSON.stringify({ type: 'ping', timestamp: new Date().toISOString() }));
-    }
-  });
-}, 30000);
-
-const PORT = process.env.PORT || 3001;
-server.listen(PORT, '0.0.0.0', () => {
-  console.log('[Gateway] OpenClaw Gateway running on port', PORT);
-  console.log('[Gateway] Worker ID: ${config.workerId}');
-});
-`;
-}
-
-export async function verifyGatewayHealth(ipAddress: string, retries: number = 10): Promise<boolean> {
+export async function verifyGatewayHealth(ipAddress: string, retries: number = 15): Promise<boolean> {
   const gatewayUrl = `http://${ipAddress}:3001/health`;
   
   for (let i = 0; i < retries; i++) {
@@ -230,9 +167,10 @@ export async function verifyGatewayHealth(ipAddress: string, retries: number = 1
       });
       
       if (response.ok) {
-        const data = await response.json() as { status?: string; type?: string };
-        if (data.status === 'ok' && data.type === 'openclaw-gateway') {
-          console.log('[OpenClaw] ✅ Gateway health check passed');
+        const data = await response.json();
+        console.log('[OpenClaw] Health response:', data);
+        if (data.status === 'ok' || data.status === 'healthy') {
+          console.log('[OpenClaw] ✅ Health check passed');
           return true;
         }
       }
