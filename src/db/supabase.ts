@@ -220,6 +220,32 @@ export class Database {
     };
   }
 
+  // Store Credentials (API keys for integrations)
+  async saveStoreCredentials(storeId: string, type: string, data: any): Promise<any> {
+    const { data: result, error } = await supabase
+      .from('store_credentials')
+      .upsert({
+        store_id: storeId,
+        type,
+        encrypted_data: JSON.stringify(data),
+        updated_at: new Date().toISOString(),
+      })
+      .select()
+      .single();
+    if (error) throw error;
+    return result;
+  }
+
+  async getCredentialsByStore(storeId: string): Promise<any[]> {
+    const { data, error } = await supabase
+      .from('store_credentials')
+      .select('*')
+      .eq('store_id', storeId)
+      .order('updated_at', { ascending: false });
+    if (error) throw error;
+    return data || [];
+  }
+
   // User Credentials (GitHub, Vercel, etc.)
   async saveUserCredential(userId: string, type: string, data: any): Promise<any> {
     const { data: result, error } = await supabase
