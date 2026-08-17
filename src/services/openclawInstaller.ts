@@ -46,7 +46,11 @@ export async function installOpenClawGateway(
     
     // Step 5: Build OpenClaw
     console.log('[OpenClaw] Building OpenClaw...');
-    await ssh.execCommand('cd /opt/openclaw && npm run build');
+    const buildResult = await ssh.execCommand('cd /opt/openclaw && npm run build 2>&1');
+    if (buildResult.stderr && buildResult.stderr.includes('error')) {
+      console.error('[OpenClaw] Build errors:', buildResult.stderr);
+    }
+    console.log('[OpenClaw] Build output:', buildResult.stdout.substring(0, 500));
     
     // Step 6: Create OpenClaw workspace
     console.log('[OpenClaw] Setting up workspace...');
@@ -88,14 +92,52 @@ export async function installOpenClawGateway(
 ${JSON.stringify(openclawConfig, null, 2)}
 EOF`);
     
-    // Step 8: Create bootstrap script that starts OpenClaw Gateway
+    // Step 8: Find the correct entry point and create bootstrap script
+    console.log('[OpenClaw] Finding entry point...');
+    
+    // Check what files exist after build
+    const findResult = await ssh.execCommand('find /opt/openclaw -name "*.js" -type f | head -20');
+    console.log('[OpenClaw] Available JS files:', findResult.stdout);
+    
+    // Determine the correct entry point
+    let entryPoint = '';
+    const possiblePaths = [
+      '/opt/openclaw/dist/gateway/index.js',
+      '/opt/openclaw/dist/gateway/main.js', 
+      '/opt/openclaw/dist/index.js',
+      '/opt/openclaw/packages/gateway/dist/index.js',
+      '/opt/openclaw/packages/gateway/dist/main.js',
+      '/opt/openclaw/build/index.js',
+    ];
+    
+    for (const path of possiblePaths) {
+      const check = await ssh.execCommand(`test -f ${path} && echo "exists" || echo "not found"`);
+      if (check.stdout.trim() === 'exists') {
+        entryPoint = path;
+        console.log('[OpenClaw] Found entry point:', entryPoint);
+        break;
+      }
+    }
+    
+    if (!entryPoint) {
+      // Fallback: look for any main/dist file
+      const findMain = await ssh.execCommand('find /opt/openclaw -name "index.js" -o -name "main.js" | grep -E "(dist|build)" | head -1');
+      if (findMain.stdout.trim()) {
+        entryPoint = findMain.stdout.trim();
+        console.log('[OpenClaw] Using found entry point:', entryPoint);
+      } else {
+        throw new Error('Could not find OpenClaw entry point after build');
+      }
+    }
+    
     console.log('[OpenClaw] Creating bootstrap script...');
     const bootstrapScript = `#!/bin/bash
 export OPENCLAW_WORKSPACE=/opt/openclaw-workspace
 export OPENCLAW_PORT=3001
 export OPENCLAW_HOST=0.0.0.0
+export NODE_ENV=production
 cd /opt/openclaw
-exec node dist/gateway/main.js --port 3001 --host 0.0.0.0 --workspace /opt/openclaw-workspace
+exec node ${entryPoint} --port 3001 --host 0.0.0.0 --workspace /opt/openclaw-workspace 2>&1 | tee /var/log/openclaw.log
 `;
     
     await ssh.execCommand(`cat > /opt/openclaw-workspace/start.sh << 'EOF'
