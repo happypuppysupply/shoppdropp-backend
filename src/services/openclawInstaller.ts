@@ -36,16 +36,26 @@ export async function installOpenClawGateway(
     const nodeVersion = await ssh.execCommand('node --version');
     console.log('[OpenClaw] Node.js version:', nodeVersion.stdout);
     
-    // Step 3: Install OpenClaw globally via npm
-    console.log('[OpenClaw] Installing OpenClaw CLI...');
-    await ssh.execCommand('npm install -g openclaw');
+    // Step 3: Clone OpenClaw from GitHub (more reliable than npm)
+    console.log('[OpenClaw] Cloning OpenClaw from GitHub...');
+    await ssh.execCommand('rm -rf /opt/openclaw && git clone https://github.com/openclaw/openclaw.git /opt/openclaw');
     
-    // Step 4: Create OpenClaw workspace
+    // Step 4: Install OpenClaw dependencies
+    console.log('[OpenClaw] Installing dependencies...');
+    await ssh.execCommand('cd /opt/openclaw && npm install');
+    
+    // Step 5: Build OpenClaw
+    console.log('[OpenClaw] Building OpenClaw...');
+    await ssh.execCommand('cd /opt/openclaw && npm run build');
+    
+    // Step 6: Create OpenClaw workspace
     console.log('[OpenClaw] Setting up workspace...');
-    await ssh.execCommand('mkdir -p /opt/openclaw-workspace && cd /opt/openclaw-workspace && openclaw init --yes');
+    await ssh.execCommand('mkdir -p /opt/openclaw-workspace');
     
-    // Step 5: Create configuration file (answers the setup questions automatically)
+    // Step 7: Create configuration file (answers the setup questions automatically)
     console.log('[OpenClaw] Creating configuration...');
+    await ssh.execCommand('mkdir -p /opt/openclaw-workspace/.openclaw');
+    
     const openclawConfig = {
       workspace: "/opt/openclaw-workspace",
       defaultModel: "openrouter/moonshotai/kimi-k2.5",
@@ -78,14 +88,14 @@ export async function installOpenClawGateway(
 ${JSON.stringify(openclawConfig, null, 2)}
 EOF`);
     
-    // Step 6: Create bootstrap script that starts OpenClaw
+    // Step 8: Create bootstrap script that starts OpenClaw Gateway
     console.log('[OpenClaw] Creating bootstrap script...');
     const bootstrapScript = `#!/bin/bash
 export OPENCLAW_WORKSPACE=/opt/openclaw-workspace
 export OPENCLAW_PORT=3001
 export OPENCLAW_HOST=0.0.0.0
-cd /opt/openclaw-workspace
-exec openclaw gateway --port 3001 --host 0.0.0.0
+cd /opt/openclaw
+exec node dist/gateway/main.js --port 3001 --host 0.0.0.0 --workspace /opt/openclaw-workspace
 `;
     
     await ssh.execCommand(`cat > /opt/openclaw-workspace/start.sh << 'EOF'
@@ -93,7 +103,7 @@ ${bootstrapScript}
 EOF`);
     await ssh.execCommand('chmod +x /opt/openclaw-workspace/start.sh');
     
-    // Step 7: Create systemd service
+    // Step 9: Create systemd service
     console.log('[OpenClaw] Creating systemd service...');
     const systemdService = `[Unit]
 Description=OpenClaw Agent Gateway
@@ -117,15 +127,15 @@ WantedBy=multi-user.target`;
 ${systemdService}
 EOF`);
     
-    // Step 8: Start the service
+    // Step 10: Start the service
     console.log('[OpenClaw] Starting OpenClaw service...');
     await ssh.execCommand('systemctl daemon-reload && systemctl enable openclaw-gateway && systemctl start openclaw-gateway');
     
-    // Step 9: Wait for OpenClaw to initialize
+    // Step 11: Wait for OpenClaw to initialize
     console.log('[OpenClaw] Waiting for initialization...');
     await new Promise(resolve => setTimeout(resolve, 10000));
     
-    // Step 10: Verify health
+    // Step 12: Verify health
     console.log('[OpenClaw] Verifying installation...');
     const isHealthy = await verifyGatewayHealth(ipAddress, 15);
     
