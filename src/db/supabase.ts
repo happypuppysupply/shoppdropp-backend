@@ -193,31 +193,63 @@ export class Database {
       updateData.api_key_encrypted = config.apiKey; // TODO: Add actual encryption
     }
     
-    // Set use_platform_ai flag
+    // Set use_platform_ai flag (may not exist in DB yet)
     if (config.usePlatformAI !== undefined) {
       updateData.use_platform_ai = config.usePlatformAI;
     }
     
-    const { data, error } = await supabase
-      .from('ai_configs')
-      .upsert(updateData)
-      .select()
-      .single();
-    if (error) throw error;
-    return data;
+    try {
+      const { data, error } = await supabase
+        .from('ai_configs')
+        .upsert(updateData)
+        .select()
+        .single();
+      if (error) throw error;
+      return data;
+    } catch (err: any) {
+      // If use_platform_ai column doesn't exist, retry without it
+      if (err.message?.includes('use_platform_ai')) {
+        delete updateData.use_platform_ai;
+        const { data, error } = await supabase
+          .from('ai_configs')
+          .upsert(updateData)
+          .select()
+          .single();
+        if (error) throw error;
+        return { ...data, use_platform_ai: config.usePlatformAI || false };
+      }
+      throw err;
+    }
   }
 
   async getAIConfig(userId: string): Promise<any> {
-    const { data, error } = await supabase
-      .from('ai_configs')
-      .select('*')
-      .eq('user_id', userId)
-      .single();
-    if (error) return null;
-    return {
-      ...data,
-      use_platform_ai: data?.use_platform_ai || false,
-    };
+    try {
+      const { data, error } = await supabase
+        .from('ai_configs')
+        .select('*')
+        .eq('user_id', userId)
+        .single();
+      if (error) return null;
+      return {
+        ...data,
+        use_platform_ai: data?.use_platform_ai ?? (data?.provider === 'openrouter' && !data?.api_key_encrypted),
+      };
+    } catch (err: any) {
+      if (err.message?.includes('use_platform_ai')) {
+        // Fallback: query without the column
+        const { data, error } = await supabase
+          .from('ai_configs')
+          .select('id, user_id, provider, model, api_key_encrypted, created_at, updated_at')
+          .eq('user_id', userId)
+          .single();
+        if (error) return null;
+        return {
+          ...data,
+          use_platform_ai: data?.provider === 'openrouter' && !data?.api_key_encrypted,
+        };
+      }
+      return null;
+    }
   }
 
   // User Credentials (GitHub, Vercel, etc.)
