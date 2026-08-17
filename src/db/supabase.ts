@@ -182,11 +182,13 @@ export class Database {
   // AI Configuration
   async saveAIConfig(userId: string, config: { provider: string; model: string; apiKey?: string | null; usePlatformAI?: boolean }): Promise<any> {
     // First check if config already exists for this user
-    const { data: existing } = await supabase
+    const { data: existingRows } = await supabase
       .from('ai_configs')
       .select('id')
       .eq('user_id', userId)
-      .single();
+      .limit(1);
+    
+    const existing = existingRows && existingRows.length > 0 ? existingRows[0] : null;
     
     const updateData: any = {
       provider: config.provider,
