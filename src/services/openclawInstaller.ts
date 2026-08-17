@@ -50,7 +50,8 @@ ENDOFFILE`);
       dependencies: {
         "ws": "^8.14.2",
         "express": "^4.18.2",
-        "cors": "^2.8.5"
+        "cors": "^2.8.5",
+        "uuid": "^9.0.1"
       }
     };
     await ssh.execCommand(`cat > /opt/openclaw-workspace/package.json << 'EOF'
