@@ -2,7 +2,7 @@ services:
   - type: web
     name: shoppdropp-api
     runtime: node
-    plan: free
+    plan: pro
     buildCommand: npm install && npm run build
     startCommand: node dist/index.js
     healthCheckPath: /health
@@ -22,6 +22,14 @@ services:
       - key: JWT_SECRET
         generateValue: true
       - key: FRONTEND_URL
-        value: https://shoppdropp-blueprint.vercel.app
+        value: https://www.lendsquid.ai
       - key: CORS_ORIGIN
-        value: https://shoppdropp-blueprint.vercel.app
+        value: https://www.lendsquid.ai
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: HETZNER_API_TOKEN
+        sync: false
+      - key: CJ_DROPSHIPPING_API_KEY
+        sync: false
+      - key: SSH_PRIVATE_KEY
+        sync: false
