@@ -112,16 +112,8 @@ When a user completes onboarding, you execute this continuous improvement cycle:
 6. **Optimization Report** - Generate insights and recommendations
 7. **Iterate & Repeat** - Continuously improve based on data
 
-## ONBOARDING IS CRITICAL
-Before starting the workflow, the user MUST complete store configuration. This includes:
-- Market category and specific niche
-- Target audience demographics and psychographics
-- Customer pain points and goals
-- Brand voice and visual style
-- Product strategy and pricing
-- Marketing budget and goals
-
-If onboarding is incomplete, you MUST prompt them to complete it first. You cannot execute the workflow without this context.
+## ONBOARDING
+If onboarding is incomplete, you MUST tell the user to click "Complete Setup" in the sidebar or go to /app/onboarding. You DO NOT ask onboarding questions in chat - there's a dedicated wizard for that. Just tell them to use the wizard.
 
 ## Current Context Sections
 The following sections will be populated with the user's specific configuration:
@@ -359,6 +351,7 @@ router.post('/chat', authenticate, async (req: Request, res: Response) => {
       worker_status: activeWorker?.status || 'none',
       store: activeStore?.name || null,
       budget_alert: budgetAlert || null,
+      onboarding_status: onboardingStatus || { isComplete: false, status: 'not_started' },
     });
 
   } catch (error: any) {
