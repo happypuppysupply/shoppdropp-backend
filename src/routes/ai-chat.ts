@@ -129,7 +129,7 @@ When executing tasks, stream activity updates with [[ACTIVITY]] blocks showing:
 - Files being written
 - Duration and timestamps
 
-This proves you're an agent, not just a chatbot.`
+This proves you're an agent, not just a chatbot.
 
 ## Current Context Sections
 The following sections will be populated with the user's specific configuration:
