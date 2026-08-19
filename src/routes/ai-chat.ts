@@ -361,6 +361,25 @@ router.post('/chat', authenticate, async (req: Request, res: Response) => {
     // Check for budget alert from the response
     const budgetAlert = (aiResponse as any).budgetAlert;
     
+    // Check if we should return interactive onboarding questions
+    let interactive = null;
+    if (!activeStore || !activeStore.onboarding_complete) {
+      const lowerMsg = message.toLowerCase();
+      if (lowerMsg.includes('start') || lowerMsg.includes('setup') || lowerMsg.includes('onboard') || lowerMsg.includes('begin')) {
+        interactive = {
+          type: 'multiselect',
+          question: 'What is your target market?',
+          options: ['United States', 'United Kingdom', 'Canada', 'Australia', 'Europe']
+        };
+      } else if (conversation_history.some((m: any) => m.content?.toLowerCase().includes('target market'))) {
+        interactive = {
+          type: 'multiselect',
+          question: 'What product categories are you interested in?',
+          options: ['Pets', 'Home & Garden', 'Beauty & Health', 'Electronics', 'Fitness', 'Fashion']
+        };
+      }
+    }
+
     res.json({
       response: aiResponse.content,
       command_executed: commandResult,
@@ -368,6 +387,7 @@ router.post('/chat', authenticate, async (req: Request, res: Response) => {
       store: activeStore?.name || null,
       budget_alert: budgetAlert || null,
       onboarding_status: onboardingStatus || { isComplete: false, status: 'not_started' },
+      interactive,
     });
 
   } catch (error: any) {
