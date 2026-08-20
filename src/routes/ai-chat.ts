@@ -318,13 +318,35 @@ router.post('/chat', authenticate, async (req: Request, res: Response) => {
     }
     
     // Add credentials info to context
+    const configuredServices = credentials.map(c => c.service_type);
+    const missingRequiredServices = ['shopify', 'cj_dropshipping'].filter(s => !configuredServices.includes(s));
+    const missingResearchApis = ['openwebninja_amazon', 'openwebninja_product_search'].filter(s => !configuredServices.includes(s));
+    
     if (credentials.length > 0) {
       contextPrompt += `\n\n## Configured API Keys/Integrations\nThe following integrations have API credentials stored and are available for use:`;
       for (const cred of credentials) {
         const hasKeys = cred.api_key || cred.access_token || cred.refresh_token || cred.password;
         contextPrompt += `\n- ${cred.service_type}: ${hasKeys ? '✅ Configured' : '❌ Not configured'}`;
       }
-      contextPrompt += `\n\nWhen the user asks about API keys or integrations, you should confirm which ones are available based on this list.`;
+    }
+    
+    // SEAMLESS FLOW LOGIC
+    if (storeConfig?.onboarding_status === 'complete') {
+      if (missingRequiredServices.length > 0) {
+        contextPrompt += `\n\n## NEXT STEP: API Keys Required 🔑\n`;
+        contextPrompt += `Onboarding is complete! Now we need to connect your platforms:\n`;
+        contextPrompt += `Missing: ${missingRequiredServices.join(', ')}\n`;
+        contextPrompt += `\nAsk the user to provide their API keys. Use the connect form to let them select which platforms to connect.`;
+      } else if (missingResearchApis.length > 0) {
+        contextPrompt += `\n\n## NEXT STEP: Research APIs 🔍\n`;
+        contextPrompt += `Required platforms connected! Add research APIs for product hunting:\n`;
+        contextPrompt += `Available: Amazon Data, Walmart Data, eBay Data, Product Search, E-commerce Data\n`;
+        contextPrompt += `\nAsk which research APIs they want to enable.`;
+      } else {
+        contextPrompt += `\n\n## ✅ FULLY CONFIGURED\n`;
+        contextPrompt += `All systems ready! The user can now start AI workflows.\n`;
+        contextPrompt += `Offer to start: product research, store setup, ad campaigns, or order fulfillment.`;
+      }
     }
 
     // Build messages array
@@ -363,22 +385,57 @@ router.post('/chat', authenticate, async (req: Request, res: Response) => {
     // Check for budget alert from the response
     const budgetAlert = (aiResponse as any).budgetAlert;
     
-    // Check if we should return interactive onboarding questions
-    let interactive = null;
-    if (!activeStore || !activeStore.onboarding_complete) {
-      const lowerMsg = message.toLowerCase();
-      if (lowerMsg.includes('start') || lowerMsg.includes('setup') || lowerMsg.includes('onboard') || lowerMsg.includes('begin')) {
-        interactive = {
-          type: 'multiselect',
-          question: 'What is your target market?',
-          options: ['United States', 'United Kingdom', 'Canada', 'Australia', 'Europe']
+    // SEAMLESS FLOW: Auto-inject forms based on configuration state
+    let autoForm = null;
+    
+    // If onboarding is complete but missing required API keys, auto-prompt
+    if (storeConfig?.onboarding_status === 'complete' && missingRequiredServices.length > 0) {
+      // Check if user just completed onboarding or is responding to API prompt
+      const isApiResponse = message.toLowerCase().includes('api') || 
+                           message.toLowerCase().includes('key') ||
+                           message.toLowerCase().includes('connect') ||
+                           message.toLowerCase().includes('shopify') ||
+                           message.toLowerCase().includes('cj');
+      
+      if (!isApiResponse) {
+        // User hasn't responded to API prompt yet, inject the form
+        autoForm = {
+          type: 'connect',
+          services: [
+            { id: 'shopify', name: 'Shopify', description: 'Store API' },
+            { id: 'cj_dropshipping', name: 'CJ Dropshipping', description: 'Supplier API' },
+            { id: 'meta_ads', name: 'Meta Ads', description: 'Advertising API' },
+            { id: 'openwebninja', name: 'OpenWeb Ninja', description: 'Research APIs (Amazon, Walmart, eBay)' }
+          ]
         };
-      } else if (conversation_history.some((m: any) => m.content?.toLowerCase().includes('target market'))) {
-        interactive = {
-          type: 'multiselect',
-          question: 'What product categories are you interested in?',
-          options: ['Pets', 'Home & Garden', 'Beauty & Health', 'Electronics', 'Fitness', 'Fashion']
+        
+        // Append form to AI response if not already present
+        if (!aiResponse.content.includes('[[FORM]]')) {
+          aiResponse.content += `\n\n[[FORM]]\n${JSON.stringify(autoForm)}\n[[/FORM]]`;
+        }
+      }
+    }
+    
+    // If all required APIs are configured but missing research APIs
+    if (storeConfig?.onboarding_status === 'complete' && 
+        missingRequiredServices.length === 0 && 
+        missingResearchApis.length > 0) {
+      const isResearchResponse = message.toLowerCase().includes('research') ||
+                                message.toLowerCase().includes('amazon') ||
+                                message.toLowerCase().includes('walmart');
+      
+      if (!isResearchResponse && !aiResponse.content.includes('[[FORM]]')) {
+        autoForm = {
+          type: 'connect',
+          services: [
+            { id: 'openwebninja_amazon', name: 'Amazon Data', description: 'Real-time Amazon product data' },
+            { id: 'openwebninja_walmart', name: 'Walmart Data', description: 'Real-time Walmart product data' },
+            { id: 'openwebninja_ebay', name: 'eBay Data', description: 'Real-time eBay product data' },
+            { id: 'openwebninja_product_search', name: 'Product Search', description: 'Cross-platform product search' },
+            { id: 'openwebninja_ecommerce', name: 'E-commerce Data', description: 'Multi-platform commerce data' }
+          ]
         };
+        aiResponse.content += `\n\n[[FORM]]\n${JSON.stringify(autoForm)}\n[[/FORM]]`;
       }
     }
 
