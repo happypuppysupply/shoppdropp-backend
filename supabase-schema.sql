@@ -32,7 +32,7 @@ create table if not exists public.stores (
 create table public.api_credentials (
   id uuid primary key default gen_random_uuid(),
   store_id uuid references public.stores(id) on delete cascade not null,
-  type text not null check (type in ('shopify', 'meta_ads', 'autods')),
+  type text not null check (type in ('shopify', 'meta_ads', 'autods', 'openwebninja_amazon', 'openwebninja_product_search', 'openwebninja_walmart', 'openwebninja_ecommerce', 'openwebninja_ebay', 'cj_dropshipping')),
   encrypted_data text not null,
   created_at timestamp with time zone default timezone('utc'::text, now()),
   updated_at timestamp with time zone default timezone('utc'::text, now()),
