@@ -762,4 +762,98 @@ router.get('/debug-ai-config', authenticate, async (req: Request, res: Response)
   }
 });
 
+// Save a chat message
+router.post('/messages', authenticate, async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user;
+    const { store_id, role, content, metadata = {} } = req.body;
+
+    if (!role || !content) {
+      return res.status(400).json({ error: 'role and content are required' });
+    }
+
+    const { data: message, error } = await supabase
+      .from('chat_messages')
+      .insert({
+        user_id: user.id,
+        store_id: store_id || null,
+        role,
+        content,
+        metadata,
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Failed to save message:', error);
+      return res.status(500).json({ error: 'Failed to save message' });
+    }
+
+    res.json({ success: true, message });
+  } catch (error: any) {
+    console.error('Save message error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get chat messages for a user (optionally filtered by store)
+router.get('/messages', authenticate, async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user;
+    const { store_id, limit = 50 } = req.query;
+
+    let query = supabase
+      .from('chat_messages')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: true })
+      .limit(parseInt(limit as string));
+
+    if (store_id) {
+      query = query.eq('store_id', store_id);
+    }
+
+    const { data: messages, error } = await query;
+
+    if (error) {
+      console.error('Failed to fetch messages:', error);
+      return res.status(500).json({ error: 'Failed to fetch messages' });
+    }
+
+    res.json({ messages });
+  } catch (error: any) {
+    console.error('Get messages error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Clear chat messages for a user/store
+router.delete('/messages', authenticate, async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user;
+    const { store_id } = req.query;
+
+    let query = supabase
+      .from('chat_messages')
+      .delete()
+      .eq('user_id', user.id);
+
+    if (store_id) {
+      query = query.eq('store_id', store_id);
+    }
+
+    const { error } = await query;
+
+    if (error) {
+      console.error('Failed to clear messages:', error);
+      return res.status(500).json({ error: 'Failed to clear messages' });
+    }
+
+    res.json({ success: true, message: 'Messages cleared' });
+  } catch (error: any) {
+    console.error('Clear messages error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 export default router;
