@@ -104,25 +104,94 @@ const SYSTEM_PROMPT = `You are the ShoppDropp AI Agent, an autonomous dropshippi
 ## YOUR CAPABILITIES
 You can execute real tasks: provision VPS workers, sync Shopify catalogs, research products, optimize prices, manage Meta Ads - not just chat.
 
-## ONBOARDING VIA CHAT
-When store configuration is incomplete, guide the user through onboarding IN THE CHAT INTERFACE. Ask one question at a time:
+## ONBOARDING VIA CHAT (FACEBOOK ADS ALIGNED)
+When store configuration is incomplete, guide the user through onboarding IN THE CHAT INTERFACE. This data will be used to create targeted Facebook/Meta ad campaigns, so accuracy matters.
 
-1. First: "What category will you sell in?" (show category cards)
-2. Then: "What's your specific niche?" (show niche options)  
-3. Then: "Who's your target audience?" (show audience chips)
-4. Continue through brand voice, pricing, marketing budget
-5. Finally: "Let's connect your platforms" (show Shopify + supplier options)
+Ask ONE question at a time. Track answers in the conversation.
 
-Each question should include a [[FORM]] block with JSON format. The frontend will render rich UI components. Wrap the JSON in [[FORM]]...[[/FORM]] tags.
+### REQUIRED ONBOARDING QUESTIONS (in order):
 
-## FORM TYPES TO USE
-- Cards selection: [[FORM]]{"type":"cards","options":["Pet Supplies 🐾","Home & Garden 🏡","Electronics 🔌"]}[[/FORM]]
-- Multi-select chips: [[FORM]]{"type":"chips","options":["Dog owners","Cat lovers"],"multi":true}[[/FORM]]
-- Number input: [[FORM]]{"type":"number","min":10,"max":500}[[/FORM]]
-- Slider (0-10): [[FORM]]{"type":"slider","min":0,"max":10,"default":5}[[/FORM]]
-- Platform connect: [[FORM]]{"type":"connect","services":[{"id":"shopify","name":"Shopify"},{"id":"cj","name":"CJ Dropshipping"},{"id":"meta","name":"Meta Ads"}]}[[/FORM]]
+**Q1: Store Identity**
+"What's your store name?" (text input)
+[[FORM]]{"type":"text","placeholder":"e.g., Happy Puppy Supply"}[[/FORM]]
 
-IMPORTANT: Always use [[FORM]]...[[/FORM]] format with JSON inside. Never use attribute syntax like [[FORM type="..."]].
+**Q2: Product Category** (single select)
+"What category will you sell in?"
+[[FORM]]{"type":"cards","options":["Pet Supplies 🐾","Home & Garden 🏡","Beauty & Health 💄","Electronics 🔌","Fashion & Apparel 👕","Fitness & Sports 🏋️","Toys & Kids 🧸","Food & Beverage 🍔"]}[[/FORM]]
+
+**Q3: Specific Niche** (single select)
+"What's your specific niche within [category]?"
+
+**Q4: Target Location** (multi-select, Facebook Ads locations)
+"Which countries/regions will you target?"
+[[FORM]]{"type":"chips","options":["United States","United Kingdom","Canada","Australia","Germany","France","Europe (All)"],"multi":true}[[/FORM]]
+
+**Q5: Target Age Range** (single select, Facebook Ads age)
+"What's your target customer's age range?"
+[[FORM]]{"type":"cards","options":["18-24 (Gen Z)","25-34 (Millennials)","35-44","45-54","55-64","65+"]}[[/FORM]]
+
+**Q6: Target Gender** (single select)
+"Which gender is your primary audience?"
+[[FORM]]{"type":"cards","options":["All Genders","Women","Men"]}[[/FORM]]
+
+**Q7: Detailed Targeting - Interests** (MULTI-SELECT, Facebook Ads interests)
+"Select interests that match your ideal customer (choose ALL that apply):"
+- Pet Supplies: Dog training, Cat care, Pet grooming, Veterinary, Pet adoption
+- Home & Garden: Home decor, Interior design, DIY home, Gardening, Smart home
+- Beauty: Skincare, Makeup, Hair care, Nail care, Organic beauty
+- Fitness: Weight loss, Muscle building, Yoga, Running, Nutrition
+- Electronics: Gaming, Technology, Smartphones, Photography, Software
+- Fashion: Streetwear, Luxury, Sustainable fashion, Accessories, Shoes
+[[FORM]]{"type":"chips","options":["Dog training","Cat care","Pet grooming","Veterinary","Pet adoption"],"multi":true}[[/FORM]]
+
+**Q8: Behaviors & Pain Points** (multi-select)
+"What problems does your product solve? Select ALL that apply:"
+[[FORM]]{"type":"chips","options":["Too expensive alternatives","Poor quality existing products","Hard to find specialty items","Time-consuming process","Health/safety concerns","Environmental impact","Lack of convenience"],"multi":true}[[/FORM]]
+
+**Q9: Brand Personality** (single select)
+"What's your brand's personality?"
+[[FORM]]{"type":"cards","options":["Fun & Playful 🎉","Luxury & Premium 💎","Eco-Friendly & Natural 🌿","Professional & Trustworthy 💼","Trendy & Bold 🔥","Cozy & Comforting 🏠"]}[[/FORM]]
+
+**Q10: Price Positioning** (single select)
+"What's your pricing strategy?"
+[[FORM]]{"type":"cards","options":["Budget-friendly ($5-25)","Mid-range ($25-75)","Premium ($75-200)","Luxury ($200+)"]}[[/FORM]]
+
+**Q11: Target Margin** (single select)  
+"What's your target profit margin? (Higher margins = more ad spend flexibility)"
+[[FORM]]{"type":"cards","options":["20-30% (Competitive)","30-40% (Healthy)","40-50% (Strong)","50%+ (Premium)"]}[[/FORM]]
+
+**Q12: Product Price Range** (single select)
+"What price range will your products sell for?"
+[[FORM]]{"type":"cards","options":["$10-30","$30-60","$60-100","$100-200","$200+"]}[[/FORM]]
+
+**Q13: Marketing Budget** (number input)
+"What's your monthly marketing budget for Meta Ads?"
+[[FORM]]{"type":"number","placeholder":"Monthly budget in USD","min":100,"max":10000,"prefix":"$"}[[/FORM]]
+
+**Q14: Customer Acquisition Strategy** (multi-select)
+"How do you plan to acquire customers?"
+[[FORM]]{"type":"chips","options":["Meta/Facebook Ads","Google Ads","TikTok Ads","Influencer marketing","Email marketing","SEO/Content","Referral program"],"multi":true}[[/FORM]]
+
+**Q15: Content Style** (single select)
+"What type of content will you create?"
+[[FORM]]{"type":"cards","options":["Product demos & tutorials","Lifestyle & aspirational","Educational & helpful","User-generated content","Behind-the-scenes","Customer testimonials"]}[[/FORM]]
+
+**Q16: Competitive Advantage** (text input)
+"What makes your store different from competitors?"
+[[FORM]]{"type":"text","placeholder":"e.g., faster shipping, better quality, unique designs..."}[[/FORM]]
+
+### SEAMLESS TRANSITION LOGIC:
+- After Q16 completes → Check if API keys exist
+- If NO API keys → Prompt user to enter keys in sidebar (NOT connect form)
+- If API keys exist → Show "Connect Platforms" form
+- After APIs connected → Show workflow options
+
+### IMPORTANT RULES:
+- Use multi-select (multi:true) for: Locations, Interests, Pain Points
+- Use single-select for: Category, Niche, Age, Gender, Brand, Price strategy
+- Always include the question text BEFORE the [[FORM]] block
+- Wait for user answer before asking next question
+- Acknowledge their previous answer before asking the next one
 
 ## ALWAYS SHOW ACTIVITY
 When executing tasks, stream activity updates with [[ACTIVITY]] blocks showing:
@@ -334,9 +403,15 @@ router.post('/chat', authenticate, async (req: Request, res: Response) => {
     if (storeConfig?.onboarding_status === 'complete') {
       if (missingRequiredServices.length > 0) {
         contextPrompt += `\n\n## NEXT STEP: API Keys Required 🔑\n`;
-        contextPrompt += `Onboarding is complete! Now we need to connect your platforms:\n`;
-        contextPrompt += `Missing: ${missingRequiredServices.join(', ')}\n`;
-        contextPrompt += `\nAsk the user to provide their API keys. Use the connect form to let them select which platforms to connect.`;
+        contextPrompt += `Onboarding is complete! Now we need to connect your platforms.\n`;
+        contextPrompt += `CRITICAL: The user needs to ENTER their API keys in the sidebar BEFORE attempting to connect.\n`;
+        contextPrompt += `Missing platforms: ${missingRequiredServices.join(', ')}\n`;
+        contextPrompt += `\nINSTRUCTIONS FOR USER:\n`;
+        contextPrompt += `1. Click "API Keys" in the right sidebar\n`;
+        contextPrompt += `2. Enter your API keys for: ${missingRequiredServices.join(', ')}\n`;
+        contextPrompt += `3. Click "Save" for each platform\n`;
+        contextPrompt += `4. Return to chat and say "I've added my API keys"\n`;
+        contextPrompt += `\nDO NOT show a "Connect" form yet - they need to enter keys first!`;
       } else if (missingResearchApis.length > 0) {
         contextPrompt += `\n\n## NEXT STEP: Research APIs 🔍\n`;
         contextPrompt += `Required platforms connected! Add research APIs for product hunting:\n`;
@@ -388,31 +463,19 @@ router.post('/chat', authenticate, async (req: Request, res: Response) => {
     // SEAMLESS FLOW: Auto-inject forms based on configuration state
     let autoForm = null;
     
-    // If onboarding is complete but missing required API keys, auto-prompt
+    // If onboarding is complete but missing required API keys, DON'T show connect form
+    // Instead, instruct them to enter keys in the sidebar first
     if (storeConfig?.onboarding_status === 'complete' && missingRequiredServices.length > 0) {
-      // Check if user just completed onboarding or is responding to API prompt
-      const isApiResponse = message.toLowerCase().includes('api') || 
-                           message.toLowerCase().includes('key') ||
-                           message.toLowerCase().includes('connect') ||
-                           message.toLowerCase().includes('shopify') ||
-                           message.toLowerCase().includes('cj');
+      // Check if user is confirming they've added API keys
+      const hasAddedKeys = message.toLowerCase().includes('added') || 
+                          message.toLowerCase().includes('entered') ||
+                          message.toLowerCase().includes('saved') ||
+                          message.toLowerCase().includes('done') ||
+                          message.toLowerCase().includes('yes');
       
-      if (!isApiResponse) {
-        // User hasn't responded to API prompt yet, inject the form
-        autoForm = {
-          type: 'connect',
-          services: [
-            { id: 'shopify', name: 'Shopify', description: 'Store API' },
-            { id: 'cj_dropshipping', name: 'CJ Dropshipping', description: 'Supplier API' },
-            { id: 'meta_ads', name: 'Meta Ads', description: 'Advertising API' },
-            { id: 'openwebninja', name: 'OpenWeb Ninja', description: 'Research APIs (Amazon, Walmart, eBay)' }
-          ]
-        };
-        
-        // Append form to AI response if not already present
-        if (!aiResponse.content.includes('[[FORM]]')) {
-          aiResponse.content += `\n\n[[FORM]]\n${JSON.stringify(autoForm)}\n[[/FORM]]`;
-        }
+      if (!hasAddedKeys && !aiResponse.content.includes('sidebar') && !aiResponse.content.includes('API Keys')) {
+        // Add instruction to use sidebar - NO FORM
+        aiResponse.content += `\n\n**Next Step: Add Your API Keys** 🔑\n\nBefore I can connect your platforms, you need to enter your API keys:\n\n1. **Click "API Keys" in the right sidebar** →\n2. **Enter your keys for:** ${missingRequiredServices.join(', ')}\n3. **Click Save for each platform**\n4. **Return here and say "I've added my keys"**\n\n*Don't have API keys yet? I can help you get them from Shopify, CJ Dropshipping, and Meta.*`;
       }
     }
     
