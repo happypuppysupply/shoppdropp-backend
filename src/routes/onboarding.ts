@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { authenticate } from '../middleware/auth';
 import { onboardingService } from '../services/onboardingService';
-import { db } from '../db/supabase';
+import { db, supabase } from '../db/supabase';
 import fs from 'fs';
 import path from 'path';
 
@@ -32,7 +32,7 @@ router.get('/state/:storeId', authenticate, async (req: Request, res: Response) 
   }
 });
 
-// Get current step prompt with dynamic options
+// Get current step prompt - NOW USES NEW 27-QUESTION SYSTEM
 router.get('/step/:storeId', authenticate, async (req: Request, res: Response) => {
   try {
     const user = (req as any).user;
@@ -44,22 +44,52 @@ router.get('/step/:storeId', authenticate, async (req: Request, res: Response) =
       return res.status(404).json({ error: 'Store not found' });
     }
 
-    const state = await onboardingService.getOnboardingState(storeId, user.id);
-    const step = await onboardingService.generateStepPrompt(
-      storeId,
-      user.id,
-      state.config.onboarding_step || 1,
-      state.config.onboarding_data || {}
-    );
-
-    res.json(step);
+    // Use new 27-question system
+    const { data: config } = await supabase
+      .from('store_configs')
+      .select('*')
+      .eq('store_id', storeId)
+      .single();
+    
+    const currentIndex = config?.current_question_index || 0;
+    const { ONBOARDING_QUESTIONS } = await import('../onboarding-questions');
+    
+    if (currentIndex >= ONBOARDING_QUESTIONS.length) {
+      return res.json({
+        stepNumber: 27,
+        stepName: 'Onboarding Complete',
+        prompt: 'You have completed all onboarding questions! You can now start using the AI workflow.',
+        inputType: 'complete',
+        isComplete: true,
+      });
+    }
+    
+    const question = ONBOARDING_QUESTIONS[currentIndex];
+    
+    // Map question type to old format
+    let inputType = 'text';
+    if (question.type === 'cards') inputType = 'single_select';
+    else if (question.type === 'chips') inputType = 'multi_select';
+    else if (question.type === 'slider') inputType = 'slider';
+    else if (question.type === 'number') inputType = 'number';
+    
+    // Map question to old format for compatibility
+    res.json({
+      stepNumber: currentIndex + 1,
+      stepName: question.id,
+      prompt: question.question,
+      inputType: inputType,
+      options: question.options,
+      section: question.section,
+      totalSteps: 27,
+    });
   } catch (error: any) {
     console.error('Get onboarding step error:', error);
     res.status(500).json({ error: error.message });
   }
 });
 
-// Save step response and advance
+// Save step response and advance - NOW USES NEW 27-QUESTION SYSTEM
 router.post('/step/:storeId', authenticate, async (req: Request, res: Response) => {
   try {
     const user = (req as any).user;
@@ -72,27 +102,60 @@ router.post('/step/:storeId', authenticate, async (req: Request, res: Response) 
       return res.status(404).json({ error: 'Store not found' });
     }
 
-    const updatedConfig = await onboardingService.saveOnboardingStep(
-      storeId,
-      user.id,
-      stepNumber,
-      stepName,
-      data
-    );
+    // Get current config
+    const { data: config } = await supabase
+      .from('store_configs')
+      .select('*')
+      .eq('store_id', storeId)
+      .single();
+    
+    const currentIndex = config?.current_question_index || 0;
+    const answers = config?.onboarding_answers || {};
+    
+    // Save answer to new format
+    answers[stepName] = data;
+    const nextIndex = currentIndex + 1;
+    const { ONBOARDING_QUESTIONS } = await import('../onboarding-questions');
+    const isComplete = nextIndex >= ONBOARDING_QUESTIONS.length;
+    
+    // Update database
+    const { error: updateError } = await supabase
+      .from('store_configs')
+      .update({
+        current_question_index: nextIndex,
+        onboarding_answers: answers,
+        onboarding_status: isComplete ? 'complete' : 'in_progress',
+        onboarding_step: nextIndex + 1, // backward compat
+        updated_at: new Date().toISOString(),
+      })
+      .eq('store_id', storeId)
+      .eq('user_id', user.id);
+    
+    if (updateError) throw updateError;
+    
+    // Also save to memory
+    await supabase.from('memory_entries').insert({
+      user_id: user.id,
+      store_id: storeId,
+      type: 'onboarding_answer',
+      key: stepName,
+      value: typeof data === 'object' ? JSON.stringify(data) : String(data),
+      created_at: new Date().toISOString(),
+    });
 
     // Check if onboarding is now complete
-    const workflowCheck = onboardingService.canStartWorkflow(updatedConfig);
+    const workflowCheck = onboardingService.canStartWorkflow({ onboarding_answers: answers });
 
     // If complete, generate AI context summary
-    if (updatedConfig.onboarding_status === 'complete') {
+    if (isComplete) {
       await onboardingService.generateAIContextSummary(storeId);
     }
 
     res.json({
       success: true,
-      nextStep: updatedConfig.onboarding_step,
-      status: updatedConfig.onboarding_status,
-      isComplete: updatedConfig.onboarding_status === 'complete',
+      nextStep: nextIndex + 1,
+      status: isComplete ? 'complete' : 'in_progress',
+      isComplete: isComplete,
       canStartWorkflow: workflowCheck.ready,
       missingForWorkflow: workflowCheck.missing,
     });
