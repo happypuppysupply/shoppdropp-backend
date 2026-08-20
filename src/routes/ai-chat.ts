@@ -530,29 +530,33 @@ router.post('/chat', authenticate, async (req: Request, res: Response) => {
     // Check for budget alert from the response
     const budgetAlert = (aiResponse as any).budgetAlert;
     
-    // SEAMLESS FLOW: Auto-inject forms based on configuration state
-    let autoForm = null;
+    // SEAMLESS FLOW: Show API splash screen when onboarding is complete
+    let showAPISplash = false;
     
-    // If onboarding is complete but missing required API keys, DON'T show connect form
-    // Instead, instruct them to enter keys in the sidebar first
-    if (storeConfig?.onboarding_status === 'complete' && missingRequiredServices.length > 0) {
+    // If onboarding is complete but missing API keys, trigger splash screen
+    if (storeConfig?.onboarding_status === 'complete' && missingApis.length > 0) {
       // Check if user is confirming they've added API keys
       const hasAddedKeys = message.toLowerCase().includes('added') || 
                           message.toLowerCase().includes('entered') ||
                           message.toLowerCase().includes('saved') ||
                           message.toLowerCase().includes('done') ||
-                          message.toLowerCase().includes('yes');
+                          message.toLowerCase().includes('yes') ||
+                          message.toLowerCase().includes('continue');
       
-      if (!hasAddedKeys && !aiResponse.content.includes('sidebar') && !aiResponse.content.includes('API Keys')) {
-        // Add instruction to use sidebar - NO FORM
-        aiResponse.content += `\n\n**Next Step: Add Your API Keys** 🔑\n\nBefore I can connect your platforms, you need to enter your API keys:\n\n1. **Click "API Keys" in the right sidebar** →\n2. **Enter your keys for:** ${missingRequiredServices.join(', ')}\n3. **Click Save for each platform**\n4. **Return here and say "I've added my keys"**\n\n*Don't have API keys yet? I can help you get them from Shopify, CJ Dropshipping, and Meta.*`;
+      // Check if we already showed the splash screen in this conversation
+      const alreadyShowedSplash = conversation_history.some((m: any) => 
+        m.content?.includes('[[API_SPLASH]]') || m.role === 'assistant' && m.content?.includes('Connect Your Platforms')
+      );
+      
+      if (!hasAddedKeys && !alreadyShowedSplash) {
+        // Mark to show splash screen in response
+        showAPISplash = true;
       }
     }
     
-    // If all required APIs are configured but missing research APIs
+    // Legacy: If all required APIs are configured but missing research APIs
     if (storeConfig?.onboarding_status === 'complete' && 
-        missingRequiredServices.length === 0 && 
-        missingResearchApis.length > 0) {
+        missingApis.length === 0) {
       const isResearchResponse = message.toLowerCase().includes('research') ||
                                 message.toLowerCase().includes('amazon') ||
                                 message.toLowerCase().includes('walmart');
@@ -580,6 +584,7 @@ router.post('/chat', authenticate, async (req: Request, res: Response) => {
       budget_alert: budgetAlert || null,
       onboarding_status: onboardingStatus || { isComplete: false, status: 'not_started' },
       interactive,
+      show_api_splash: showAPISplash,
     });
 
   } catch (error: any) {
