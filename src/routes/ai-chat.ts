@@ -438,8 +438,24 @@ router.post('/chat', authenticate, async (req: Request, res: Response) => {
     
     // Add credentials info to context
     const configuredServices = credentials.map(c => c.service_type);
-    const missingRequiredServices = ['shopify', 'cj_dropshipping'].filter(s => !configuredServices.includes(s));
-    const missingResearchApis = ['openwebninja_amazon', 'openwebninja_product_search'].filter(s => !configuredServices.includes(s));
+    // ALL APIs are PRIMARY - Research APIs are NOT secondary
+    const allRequiredApis = [
+      'shopify', 
+      'cj_dropshipping', 
+      'meta_ads',
+      'openwebninja_amazon',
+      'openwebninja_walmart', 
+      'openwebninja_ebay',
+      'openwebninja_product_search',
+      'openwebninja_ecommerce'
+    ];
+    const missingApis = allRequiredApis.filter(s => !configuredServices.includes(s));
+    const hasStoreApis = configuredServices.includes('shopify') && configuredServices.includes('cj_dropshipping');
+    const hasResearchApis = configuredServices.includes('openwebninja_amazon') || configuredServices.includes('openwebninja_product_search');
+    
+    // Legacy variables for compatibility
+    const missingRequiredServices = missingApis;
+    const missingResearchApis = []; // Now treated as primary
     
     if (credentials.length > 0) {
       contextPrompt += `\n\n## Configured API Keys/Integrations\nThe following integrations have API credentials stored and are available for use:`;
@@ -453,20 +469,24 @@ router.post('/chat', authenticate, async (req: Request, res: Response) => {
     if (storeConfig?.onboarding_status === 'complete') {
       if (missingRequiredServices.length > 0) {
         contextPrompt += `\n\n## NEXT STEP: API Keys Required 🔑\n`;
-        contextPrompt += `Onboarding is complete! Now we need to connect your platforms.\n`;
-        contextPrompt += `CRITICAL: The user needs to ENTER their API keys in the sidebar BEFORE attempting to connect.\n`;
-        contextPrompt += `Missing platforms: ${missingRequiredServices.join(', ')}\n`;
+        contextPrompt += `Onboarding is complete! Now we need to connect ALL platforms and research APIs.\n`;
+        contextPrompt += `⚠️ CRITICAL: Research APIs (Amazon, Walmart, eBay, Product Search, E-commerce) are PRIMARY - not optional.\n`;
+        contextPrompt += `These are essential for product research and competitive analysis.\n\n`;
+        contextPrompt += `Missing APIs: ${missingApis.join(', ')}\n`;
         contextPrompt += `\nINSTRUCTIONS FOR USER:\n`;
         contextPrompt += `1. Click "API Keys" in the right sidebar\n`;
-        contextPrompt += `2. Enter your API keys for: ${missingRequiredServices.join(', ')}\n`;
-        contextPrompt += `3. Click "Save" for each platform\n`;
+        contextPrompt += `2. Enter ALL your API keys:\n`;
+        contextPrompt += `   - Shopify (Store management)\n`;
+        contextPrompt += `   - CJ Dropshipping (Supplier & fulfillment)\n`;
+        contextPrompt += `   - Meta Ads (Advertising)\n`;
+        contextPrompt += `   - OpenWeb Ninja - Amazon Data (Product research)\n`;
+        contextPrompt += `   - OpenWeb Ninja - Walmart Data (Product research)\n`;
+        contextPrompt += `   - OpenWeb Ninja - eBay Data (Product research)\n`;
+        contextPrompt += `   - OpenWeb Ninja - Product Search (Cross-platform research)\n`;
+        contextPrompt += `   - OpenWeb Ninja - E-commerce Data (Market analysis)\n`;
+        contextPrompt += `3. Click "Save" for each API\n`;
         contextPrompt += `4. Return to chat and say "I've added my API keys"\n`;
-        contextPrompt += `\nDO NOT show a "Connect" form yet - they need to enter keys first!`;
-      } else if (missingResearchApis.length > 0) {
-        contextPrompt += `\n\n## NEXT STEP: Research APIs 🔍\n`;
-        contextPrompt += `Required platforms connected! Add research APIs for product hunting:\n`;
-        contextPrompt += `Available: Amazon Data, Walmart Data, eBay Data, Product Search, E-commerce Data\n`;
-        contextPrompt += `\nAsk which research APIs they want to enable.`;
+        contextPrompt += `\nDO NOT show a "Connect" form until ALL keys are entered!`;
       } else {
         contextPrompt += `\n\n## ✅ FULLY CONFIGURED\n`;
         contextPrompt += `All systems ready! The user can now start AI workflows.\n`;
