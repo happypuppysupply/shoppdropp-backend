@@ -3,7 +3,7 @@ import cors from 'cors';
 import { createServer } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 import { config } from './config';
-import { db } from './db/supabase';
+import { db, supabase } from './db/supabase';
 import jwt from 'jsonwebtoken';
 
 // Routes
@@ -126,17 +126,34 @@ server.on('upgrade', async (request, socket, head) => {
       return;
     }
     
+    let userId: string | null = null;
+    
+    // Try custom JWT first
     try {
       const decoded = jwt.verify(token, process.env.JWT_SECRET || config.jwt.secret) as any;
-      const userId = decoded.userId || decoded.sub;
-      
-      wss.handleUpgrade(request, socket, head, (ws) => {
-        handleAIChatWebSocket(ws, userId);
-      });
-      return;
+      userId = decoded.userId || decoded.sub;
+      console.log('[WS-Upgrade] Custom JWT verified for user:', userId);
     } catch (err) {
-      socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
-      socket.destroy();
+      // Try Supabase JWT
+      try {
+        const { data: { user }, error } = await supabase.auth.getUser(token);
+        if (error || !user) {
+          throw new Error('Supabase auth failed');
+        }
+        userId = user.id;
+        console.log('[WS-Upgrade] Supabase JWT verified for user:', userId);
+      } catch (supabaseErr) {
+        console.log('[WS-Upgrade] Both JWT verifications failed');
+        socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+        socket.destroy();
+        return;
+      }
+    }
+    
+    if (userId) {
+      wss.handleUpgrade(request, socket, head, (ws) => {
+        handleAIChatWebSocket(ws, userId!);
+      });
       return;
     }
   }
