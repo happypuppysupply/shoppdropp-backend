@@ -348,4 +348,88 @@ router.post('/reset-onboarding/:storeId', authenticate, async (req: Request, res
   }
 });
 
+// Get AI context (used by frontend to initialize chat)
+router.get('/context', authenticate, async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user;
+    
+    // Get user's active store
+    const { data: stores } = await supabase
+      .from('stores')
+      .select('*')
+      .eq('user_id', user.id);
+    
+    const activeStore = stores?.find((s: any) => s.is_active) || stores?.[0];
+    
+    // Get active worker
+    const { data: workers } = await supabase
+      .from('vps_workers')
+      .select('*')
+      .eq('user_id', user.id)
+      .eq('status', 'running')
+      .order('created_at', { ascending: false })
+      .limit(1);
+    
+    const activeWorker = workers?.[0];
+    
+    // Get store config for onboarding status
+    let storeConfig: any = null;
+    let currentQuestionIndex = 0;
+    let onboardingAnswers: Record<string, any> = {};
+    
+    if (activeStore) {
+      const { data: config } = await supabase
+        .from('store_configs')
+        .select('*')
+        .eq('store_id', activeStore.id)
+        .single();
+      
+      if (config) {
+        storeConfig = config;
+        currentQuestionIndex = config.current_question_index || 0;
+        onboardingAnswers = config.onboarding_answers || {};
+      }
+    }
+    
+    // Get credentials
+    const { data: credentials } = await supabase
+      .from('api_credentials')
+      .select('*')
+      .eq('store_id', activeStore?.id)
+      .eq('is_active', true);
+    
+    // Build context
+    const context = {
+      user: {
+        id: user.id,
+        email: user.email,
+      },
+      store: activeStore ? {
+        id: activeStore.id,
+        name: activeStore.name,
+        url: activeStore.url,
+        onboarding_status: storeConfig?.onboarding_status || 'incomplete',
+        current_question_index: currentQuestionIndex,
+        onboarding_answers: onboardingAnswers,
+      } : null,
+      worker: activeWorker ? {
+        id: activeWorker.id,
+        status: activeWorker.status,
+        ip: activeWorker.ip,
+      } : null,
+      credentials: credentials || [],
+      budget: {
+        configured: false,
+        weekly_limit: 0,
+        weekly_spent: 0,
+      },
+    };
+    
+    res.json(context);
+  } catch (error: any) {
+    console.error('Get context error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 export default router;
