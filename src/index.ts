@@ -41,7 +41,7 @@ import { getWorkerCommandQueue } from './services/workerCommands';
 
 const app = express();
 const server = createServer(app);
-const wss = new WebSocketServer({ server, path: '/ws' });
+const wss = new WebSocketServer({ server });
 const workerManager = new WorkerManager();
 
 // Middleware - CORS for lendsquid.ai and other allowed origins
