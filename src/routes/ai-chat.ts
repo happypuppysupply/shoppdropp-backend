@@ -713,6 +713,78 @@ router.post('/restart-worker', authenticate, async (req: Request, res: Response)
   }
 });
 
+// Generate onboarding contextual response (summary + next question)
+router.post('/onboarding-next', authenticate, async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user;
+    const { currentQuestionId, currentAnswer, previousAnswers, nextQuestion, storeInfo } = req.body;
+
+    // Get user's AI config
+    const aiConfig = await db.getAIConfig(user.id);
+    if (!aiConfig) {
+      return res.status(400).json({ error: 'AI not configured' });
+    }
+
+    const apiKey = aiConfig.api_key_encrypted || process.env.OPENROUTER_API_KEY;
+
+    // Build prompt for contextual response
+    const systemPrompt = `You are a helpful AI assistant guiding a user through store onboarding for a dropshipping platform.
+
+Your task:
+1. Briefly acknowledge and summarize their previous answer (1-2 sentences)
+2. Naturally transition to the next question
+3. Make it feel conversational and friendly
+4. Keep it concise (under 100 words total)
+
+The flow should feel like a natural conversation, not a form.`;
+
+    const messages = [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: `Previous answers so far: ${JSON.stringify(previousAnswers)}
+
+They just answered "${currentQuestionId}" with: "${currentAnswer}"
+
+Next question to ask: "${nextQuestion}"
+
+Please respond with:
+1. A brief acknowledgement of their answer (acknowledge the industry/category they picked with enthusiasm)
+2. The next question naturally phrased as part of the conversation` }
+    ];
+
+    const response = await axios.post(
+      'https://openrouter.ai/api/v1/chat/completions',
+      {
+        model: aiConfig.model || 'moonshotai/kimi-k2.5',
+        messages,
+        temperature: 0.8,
+        max_tokens: 200,
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': 'https://shoppdropp.com',
+          'X-Title': 'ShoppDropp AI Agent',
+        },
+      }
+    );
+
+    const aiResponse = response.data.choices[0].message.content;
+
+    res.json({
+      response: aiResponse,
+      success: true,
+    });
+  } catch (error: any) {
+    console.error('Onboarding context error:', error);
+    // Return fallback if AI fails
+    res.json({
+      response: `Great choice! Let's continue.\\n\\n${req.body.nextQuestion}`,
+      fallback: true,
+    });
+  }
+});
+
 // DEBUG: Test AI configuration and API key
 router.get('/debug-ai-config', authenticate, async (req: Request, res: Response) => {
   try {
