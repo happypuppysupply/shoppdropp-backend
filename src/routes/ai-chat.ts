@@ -113,14 +113,16 @@ When store configuration is incomplete, guide the user through onboarding IN THE
 4. Continue through brand voice, pricing, marketing budget
 5. Finally: "Let's connect your platforms" (show Shopify + supplier options)
 
-Each question should include a [[FORM]] block with the structured data format. The frontend will render rich UI components based on your form type.
+Each question should include a [[FORM]] block with JSON format. The frontend will render rich UI components. Wrap the JSON in [[FORM]]...[[/FORM]] tags.
 
 ## FORM TYPES TO USE
-- [[FORM type="cards" options="..."]] - For category selection
-- [[FORM type="chips" options="..." multi=true]] - For multi-select (audience, niches)
-- [[FORM type="slider" min=0 max=10]] - For brand voice ratings
-- [[FORM type="range" min=10 max=500 prefix="$"]] - For pricing
-- [[FORM type="connect" services="..."]] - For platform connections
+- Cards selection: [[FORM]]{"type":"cards","options":["Pet Supplies 🐾","Home & Garden 🏡","Electronics 🔌"]}[[/FORM]]
+- Multi-select chips: [[FORM]]{"type":"chips","options":["Dog owners","Cat lovers"],"multi":true}[[/FORM]]
+- Number input: [[FORM]]{"type":"number","min":10,"max":500}[[/FORM]]
+- Slider (0-10): [[FORM]]{"type":"slider","min":0,"max":10,"default":5}[[/FORM]]
+- Platform connect: [[FORM]]{"type":"connect","services":[{"id":"shopify","name":"Shopify"},{"id":"cj","name":"CJ Dropshipping"},{"id":"meta","name":"Meta Ads"}]}[[/FORM]]
+
+IMPORTANT: Always use [[FORM]]...[[/FORM]] format with JSON inside. Never use attribute syntax like [[FORM type="..."]].
 
 ## ALWAYS SHOW ACTIVITY
 When executing tasks, stream activity updates with [[ACTIVITY]] blocks showing:
