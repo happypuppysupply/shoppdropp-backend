@@ -404,19 +404,19 @@ router.get('/context', authenticate, async (req: Request, res: Response) => {
         id: user.id,
         email: user.email,
       },
-      store: activeStore ? {
+      stores: activeStore ? [{
         id: activeStore.id,
         name: activeStore.name,
         url: activeStore.url,
         onboarding_status: storeConfig?.onboarding_status || 'incomplete',
         current_question_index: currentQuestionIndex,
         onboarding_answers: onboardingAnswers,
-      } : null,
-      worker: activeWorker ? {
+      }] : [],
+      workers: activeWorker ? [{
         id: activeWorker.id,
         status: activeWorker.status,
         ip: activeWorker.ip,
-      } : null,
+      }] : [],
       credentials: credentials || [],
       budget: {
         configured: false,
