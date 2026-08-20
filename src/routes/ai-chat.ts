@@ -5,6 +5,7 @@ import axios from 'axios';
 import { createVPSProvisioner } from '../services/vpsProvisioner';
 import { getWorkerCommandQueue, WORKER_TASKS } from '../services/workerCommands';
 import { canMakeRequest, trackSpend, getBudgetStatus, formatBudgetAlert } from '../services/budgetGuard';
+import { ONBOARDING_QUESTIONS, TOTAL_ONBOARDING_QUESTIONS, getQuestion } from '../onboarding-questions';
 
 const router = Router();
 
@@ -20,1107 +21,323 @@ async function callOpenRouter(
   if (!apiKey || apiKey.length < 10) {
     throw new Error('Invalid API key provided');
   }
-  
-  // Budget guard check (if userId provided)
-  if (userId) {
-    const guardResult = await canMakeRequest(userId, model, apiKey);
-    
-    if (!guardResult.allowed) {
-      const error = new Error(guardResult.reason || 'Budget limit reached');
-      (error as any).isBudgetError = true;
-      (error as any).guardResult = guardResult;
-      throw error;
-    }
-    
-    console.log(`[Budget] Request allowed. Estimated: $${guardResult.estimatedCost?.toFixed(4)}`);
-  }
-  
-  try {
-    const response = await axios.post(
-      'https://openrouter.ai/api/v1/chat/completions',
-      {
-        model,
-        messages,
-        temperature: 0.7,
-        max_tokens: 4000,
+ 
+  const response = await axios.post(
+    'https://openrouter.ai/api/v1/chat/completions',
+    {
+      model: model,
+      messages: messages,
+      temperature: 0.7,
+      max_tokens: 2000,
+    },
+    {
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://shoppdropp.com',
+        'X-Title': 'ShoppDropp AI Agent',
       },
-      {
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-          'HTTP-Referer': 'https://shoppdropp.com',
-          'X-Title': 'ShoppDropp AI Agent',
-        },
-      }
-    );
-    
-    // Track actual spend
-    if (userId && response.data?.usage) {
-      const usage = response.data.usage;
-      // Calculate cost based on actual tokens
-      const pricing: Record<string, { input: number; output: number }> = {
-        'moonshotai/kimi-k2.5': { input: 0.002, output: 0.008 },
-        'moonshotai/kimi-k2.6': { input: 0.003, output: 0.012 },
-        'anthropic/claude-3.5-sonnet': { input: 0.003, output: 0.015 },
-        'openai/gpt-4o': { input: 0.005, output: 0.015 },
-        'openai/gpt-4o-mini': { input: 0.00015, output: 0.0006 },
-      };
-      
-      const modelPricing = pricing[model] || pricing['moonshotai/kimi-k2.5'];
-      const inputCost = (usage.prompt_tokens / 1000) * modelPricing.input;
-      const outputCost = (usage.completion_tokens / 1000) * modelPricing.output;
-      const actualCost = inputCost + outputCost;
-      
-      const trackResult = await trackSpend(userId, actualCost, model);
-      console.log(`[Budget] Tracked spend: $${actualCost.toFixed(4)}, Total: $${trackResult.newTotal.toFixed(4)}`);
-      
-      // Check if threshold crossed and include alert in response
-      if (trackResult.thresholdCrossed) {
-        const status = await getBudgetStatus(userId);
-        if (status) {
-          (response.data as any).budgetAlert = formatBudgetAlert(
-            trackResult.thresholdCrossed,
-            trackResult.newTotal,
-            status.weeklyLimit,
-            status.resetsAt
-          );
-        }
-      }
+      timeout: 30000,
     }
-    
-    return response.data.choices[0].message;
-  } catch (error: any) {
-    // Re-throw budget errors as-is
-    if (error.isBudgetError) throw error;
-    
-    console.error('OpenRouter API error:', error.response?.data || error.message);
-    throw new Error(error.response?.data?.error?.message || 'Failed to get AI response');
-  }
+  );
+
+  return response.data.choices[0].message;
 }
 
-// System prompt for the AI agent
-const SYSTEM_PROMPT = `You are the ShoppDropp AI Agent, an autonomous dropshipping assistant with full task execution capabilities.
+// System prompt - SHORT and focused
+const SYSTEM_PROMPT = `You are the ShoppDropp AI Agent. You help users set up their dropshipping business through a structured onboarding process.
 
-## YOUR CAPABILITIES
-You can execute real tasks: provision VPS workers, sync Shopify catalogs, research products, optimize prices, manage Meta Ads - not just chat.
+RULES:
+1. Ask ONE question at a time
+2. Acknowledge the user's answer before asking the next question  
+3. Be friendly and encouraging
+4. Use [[FORM]] blocks for interactive questions
 
-## ONBOARDING VIA CHAT (COMPREHENSIVE BUSINESS PROFILE)
-When store configuration is incomplete, guide the user through onboarding IN THE CHAT INTERFACE. This data creates your complete business profile for targeted ads, brand assets, and strategic decisions. Ask ONE question at a time.
+FORM FORMAT:
+[[FORM]]
+{"type":"cards","options":["Option 1","Option 2"]}
+[[/FORM]]
 
-### SECTION 1: BUSINESS GOALS & MOTIVATION
+Available types: cards (single select), chips (multi-select), text, number, slider`;
 
-**Q1: Your WHY** (single select)
-"Why are you starting this business? What's your ultimate goal?"
-[[FORM]]{"type":"cards","options":["Side Income 💰 (Extra cash alongside my job)","Profitable Brand 🚀 (Replace my income, work for myself)","Multi-Million Empire 👑 ($1M+ revenue, build something massive)","Passion Project ❤️ (Turn my hobby into income)","Financial Freedom 🏖️ (Passive income, travel lifestyle)"]}[[/FORM]]
-
-**Q2: Success Timeline** (single select)
-"What's your target timeline to hit your main goal?"
-[[FORM]]{"type":"cards","options":["3-6 months (Aggressive growth)","6-12 months (Steady build)","1-2 years (Patient growth)","2+ years (Long-term vision)"]}[[/FORM]]
-
-**Q3: Time Commitment** (single select)
-"How much time can you dedicate weekly?"
-[[FORM]]{"type":"cards","options":["5-10 hrs/week (Side hustle)","10-20 hrs/week (Part-time)","20-40 hrs/week (Serious effort)","40+ hrs/week (Full-time)"]}[[/FORM]]
-
-### SECTION 2: STORE IDENTITY
-
-**Q4: Store Name** (text input)
-"What's your store name?"
-[[FORM]]{"type":"text","placeholder":"e.g., Happy Puppy Supply"}[[/FORM]]
-
-**Q5: Store Theme/Style** (single select)
-"What Shopify theme style matches your brand?"
-[[FORM]]{"type":"cards","options":["Minimal & Clean ✨ (Focus on products)","Bold & Modern 🔥 (High impact visuals)","Warm & Friendly 🏠 (Cozy, approachable)","Luxury & Elegant 💎 (Premium feel)","Playful & Fun 🎨 (Colorful, energetic)","Rustic & Natural 🌿 (Organic, earthy)"]}[[/FORM]]
-
-### SECTION 3: PRODUCT STRATEGY
-
-**Q6: Product Category** (single select)
-"What category will you sell in?"
-[[FORM]]{"type":"cards","options":["Pet Supplies 🐾 (Food, toys, accessories)","Home & Garden 🏡 (Decor, furniture, tools)","Beauty & Personal Care 💄 (Skincare, cosmetics)","Electronics 🔌 (Gadgets, accessories)","Fashion & Apparel 👕 (Clothing, accessories)","Fitness & Sports 🏋️ (Equipment, apparel)","Toys & Kids 🧸 (Children's products)","Health & Wellness 🧘 (Supplements, self-care)","Food & Beverage 🍔 (Specialty foods, drinks)","Arts & Crafts 🎨 (Supplies, handmade)"]}[[/FORM]]
-
-**Q7: Specific Niche** (text input)
-"What's your specific niche? (Be specific: instead of 'pet supplies' say 'organic dog treats for senior dogs')"
-[[FORM]]{"type":"text","placeholder":"e.g., luxury dog accessories for small breeds"}[[/FORM]]
-
-**Q8: Product Sourcing** (single select)
-"How will you source products?"
-[[FORM]]{"type":"cards","options":["Dropshipping (No inventory, supplier ships)","Print-on-Demand (Custom designs, no inventory)","Wholesale (Buy bulk, ship yourself)","Hybrid (Mix of methods)","Manufacturing (Create unique products)"]}[[/FORM]]
-
-**Q9: Product Price Range** (single select)
-"What price range will your main products be in?"
-[[FORM]]{"type":"cards","options":["$10-30 (Impulse buy range)","$30-60 (Standard range)","$60-100 (Premium range)","$100-200 (High-ticket)","$200+ (Luxury items)"]}[[/FORM]]
-
-**Q10: Target Margin** (single select)
-"What's your target profit margin?"
-[[FORM]]{"type":"cards","options":["20-30% (Competitive, volume play)","30-40% (Healthy, balanced)","40-50% (Strong, quality focus)","50%+ (Premium, high value)"]}[[/FORM]]
-
-### SECTION 4: TARGET AUDIENCE (FACEBOOK ADS ALIGNED)
-
-**Q11: Target Locations** (multi-select)
-"Which countries/regions will you target? (Select ALL that apply)"
-[[FORM]]{"type":"chips","options":["United States 🇺🇸","Canada 🇨🇦","United Kingdom 🇬🇧","Australia 🇦🇺","Germany 🇩🇪","France 🇫🇷","Europe (All) 🇪🇺","Mexico 🇲🇽","Brazil 🇧🇷","Southeast Asia 🌏"],"multi":true}[[/FORM]]
-
-**Q12: Age Range** (multi-select)
-"What age groups are your target customers? (Select ALL)"
-[[FORM]]{"type":"chips","options":["18-24 (Gen Z)","25-34 (Millennials)","35-44 (Gen X/Older Millennials)","45-54 (Gen X)","55-64 (Boomers II)","65+ (Seniors)"],"multi":true}[[/FORM]]
-
-**Q13: Gender** (single select)
-"Which gender is your primary audience?"
-[[FORM]]{"type":"cards","options":["All Genders","Women (Primarily female)","Men (Primarily male)"]}[[/FORM]]
-
-**Q14: Income Level** (single select)
-"What's your target customer's income level?"
-[[FORM]]{"type":"cards","options":["Budget-conscious (Price-sensitive)","Middle income (Value-focused)","Upper-middle (Quality-focused)","Affluent (Premium buyers)","All income levels"]}[[/FORM]]
-
-**Q15: Interests & Hobbies** (multi-select)
-"What interests describe your ideal customer? (Select ALL that apply)"
-[[FORM]]{"type":"chips","options":["Health & Fitness","Fashion & Style","Technology & Gadgets","Home Decor & DIY","Travel & Adventure","Food & Cooking","Gaming","Parenting & Family","Sustainability & Eco-friendly","Luxury & Premium","Outdoor Activities","Arts & Creative"],"multi":true}[[/FORM]]
-
-**Q16: Life Stage** (multi-select)
-"What life stages describe your customers? (Select ALL)"
-[[FORM]]{"type":"chips","options":["Young professionals","New parents","Parents with young kids","Parents with teens","Empty nesters","Retirees","Students","Homeowners","Pet owners","Fitness enthusiasts"],"multi":true}[[/FORM]]
-
-### SECTION 5: BRAND & MARKETING
-
-**Q17: Brand Personality** (single select)
-"What's your brand's personality?"
-[[FORM]]{"type":"cards","options":["Fun & Playful 🎉 (Energetic, youthful)","Luxury & Premium 💎 (Sophisticated, exclusive)","Eco-Friendly & Natural 🌿 (Sustainable, conscious)","Professional & Trustworthy 💼 (Reliable, expert)","Trendy & Bold 🔥 (Fashion-forward, daring)","Cozy & Comforting 🏠 (Warm, homey, friendly)","Minimalist & Modern ✨ (Clean, simple, sleek)"]}[[/FORM]]
-
-**Q18: Price Positioning** (single select)
-"How do you want customers to perceive your pricing?"
-[[FORM]]{"type":"cards","options":["Budget-friendly (Best deals, savings)","Mid-range (Good value for money)","Premium (Higher quality, worth it)","Luxury (Exclusive, high-end)"]}[[/FORM]]
-
-**Q19: Unique Value Proposition** (text input)
-"Why should customers buy from YOU instead of Amazon/big retailers?"
-[[FORM]]{"type":"text","placeholder":"e.g., curated selection, expert advice, exclusive products..."}[[/FORM]]
-
-**Q20: Pain Points Solved** (multi-select)
-"What problems does your product solve for customers?"
-[[FORM]]{"type":"chips","options":["Saves time","Saves money","Reduces stress","Improves health","Better quality than alternatives","Hard to find elsewhere","More convenient","More sustainable/eco-friendly"],"multi":true}[[/FORM]]
-
-### SECTION 6: MARKETING STRATEGY
-
-**Q21: Monthly Marketing Budget** (number input)
-"What's your monthly marketing budget to start?"
-[[FORM]]{"type":"number","placeholder":"e.g., 500","min":0,"max":50000,"prefix":"$"}[[/FORM]]
-
-**Q22: Primary Ad Platform** (single select)
-"Where will you focus your ad spend initially?"
-[[FORM]]{"type":"cards","options":["Meta/Facebook Ads (Best for most products)","TikTok Ads (Great for Gen Z, viral potential)","Google Ads (Search intent, high intent buyers)","Pinterest Ads (Great for home, fashion, DIY)","Influencer Marketing (Trusted recommendations)"]}[[/FORM]]
-
-**Q23: Content Strategy** (multi-select)
-"What content will you create? (Select ALL)"
-[[FORM]]{"type":"chips","options":["Product demos & tutorials","Lifestyle photos/videos","Educational content","Behind-the-scenes","User-generated content","Customer reviews/testimonials","Fun/entertaining content","Influencer collaborations"],"multi":true}[[/FORM]]
-
-**Q24: Launch Strategy** (single select)
-"How do you plan to launch?"
-[[FORM]]{"type":"cards","options":["Soft launch (Start small, iterate)","Grand opening (Big launch event)","Pre-launch (Build email list first)","Influencer launch (Partner with creators)","Paid ads from day 1"]}[[/FORM]]
-
-### SECTION 7: OPERATIONS
-
-**Q25: Customer Support Level** (single select)
-"What level of customer support will you provide?"
-[[FORM]]{"type":"cards","options":["Email only (Self-service)","Email + Chat (Responsive)","Full support (Chat, email, phone)","VIP treatment (White-glove service)"]}[[/FORM]]
-
-**Q26: Shipping Strategy** (single select)
-"What's your shipping approach?"
-[[FORM]]{"type":"cards","options":["Free shipping on all orders","Free shipping over $X","Flat rate shipping","Calculated shipping","Fast/premium shipping options"]}[[/FORM]]
-
-**Q27: Success Metrics** (multi-select)
-"How will you measure success? (Select top 3)"
-[[FORM]]{"type":"chips","options":["Revenue growth","Profit margins","Customer acquisition cost","Customer lifetime value","Conversion rate","Email list size","Social media followers","Customer satisfaction"],"multi":true}[[/FORM]]
-
-### TRANSITION LOGIC:
-- After Q27 completes → Check if API keys exist
-- If NO API keys → Instruct user to enter keys in sidebar
-- If API keys exist → Show "Connect Platforms" form
-- After connected → Unlock AI Workflow
-
-### CRITICAL RULES:
-- Ask ONE question at a time
-- Always acknowledge the previous answer
-- Wait for user response before next question
-- Use multi-select for: Locations, Age, Interests, Life Stage, Pain Points, Content, Metrics
-- Use single-select for: Goals, Timeline, Category, Gender, Income, Brand, Positioning, Budget, Platform, Launch, Support, Shipping
-- Use text input for: Store name, Niche, UVP
-
-## ALWAYS SHOW ACTIVITY
-When executing tasks, stream activity updates with [[ACTIVITY]] blocks showing:
-- Tool calls being made
-- APIs being accessed  
-- Files being written
-- Duration and timestamps
-
-This proves you're an agent, not just a chatbot.
-
-## Current Context Sections
-The following sections will be populated with the user's specific configuration:
-- STORE_CONFIG: Their niche, audience, brand settings
-- ONBOARDING_STATUS: Whether configuration is complete
-- WORKER_STATUS: VPS worker health and capabilities
-- CREDENTIALS: Available API keys and integrations
-
-## Capabilities
-
-### Store Management
-- Create Shopify products with SEO-optimized descriptions
-- Organize products into collections/categories
-- Sync inventory with CJ Dropshipping or AutoDS
-- Price monitoring and dynamic adjustments
-
-### Marketing Automation
-- Create Meta Ads campaigns with targeting
-- Generate ad copy, headlines, descriptions
-- A/B test creatives and audiences
-- Optimize based on ROAS and conversion data
-
-### Product Research
-- Find trending products in their niche
-- Analyze competitor pricing and positioning
-- Calculate profit margins and demand
-- Source from CJ Dropshipping catalog
-
-### Analytics & Reporting
-- Track store performance metrics
-- Analyze ad campaign effectiveness
-- Generate weekly/monthly reports
-- Provide actionable recommendations
-
-### VPS Worker Control
-When the user wants infrastructure actions, return a JSON command block FIRST:
-
-[[COMMAND]]
-{"action": "worker_command", "command": "provision", "store_id": "STORE_ID"}
-[[/COMMAND]]
-Then your text response.
-
-Available commands:
-- "provision" - Create VPS and install OpenClaw Gateway
-- "destroy" - Remove VPS (use with caution)
-- "reboot" - Restart VPS
-- "status" - Check VPS health and metrics
-- "run_task" - Execute automation task
-
-### Automation Tasks
-- product_research - AI-powered trending product discovery
-- catalog_sync - Import products from CJ Dropshipping
-- price_optimization - Dynamic pricing based on competition
-- meta_ads_create - Build and launch ad campaigns
-- content_generation - Write blog posts, emails, social content
-- inventory_sync - Update stock levels from suppliers
-
-## IMPORTANT RULES
-
-1. **ALWAYS check onboarding status first**. If incomplete, guide them through configuration before offering workflow execution.
-
-2. **Be proactive**. Suggest next steps based on their current progress.
-
-3. **Use their context**. Reference their specific niche, audience, and brand voice in all recommendations.
-
-4. **Commands first**. When they want to take action (provision, run task, etc.), output the JSON command block before your explanation.
-
-5. **No generic advice**. Everything should be tailored to their store configuration.
-
-6. **Budget conscious**. Respect their marketing budget and suggest appropriate strategies.
-
-7. **Iterate mindset**. Emphasize that dropshipping success comes from continuous testing and optimization.`;
-
-// Chat endpoint
+// Main chat endpoint
 router.post('/chat', authenticate, async (req: Request, res: Response) => {
   try {
-    const user = (req as any).user;
     const { message, conversation_history = [] } = req.body;
-
-    console.log('AI Chat request from user:', user.id);
-
+    const user = (req as any).user;
+    
     // Get user's AI config
-    const aiConfig = await db.getAIConfig(user.id);
-    console.log('AI Config retrieved:', aiConfig ? { 
-      provider: aiConfig.provider, 
-      model: aiConfig.model, 
-      hasKey: !!aiConfig.api_key_encrypted,
-      keyLength: aiConfig.api_key_encrypted?.length,
-      keyPrefix: aiConfig.api_key_encrypted?.substring(0, 10) + '...'
-    } : 'null');
+    const { data: aiConfig } = await supabase
+      .from('ai_configs')
+      .select('*')
+      .eq('user_id', user.id)
+      .single();
     
-    if (!aiConfig) {
-      return res.status(400).json({ error: 'AI provider not configured. Please set up OpenRouter in settings.' });
-    }
-
-    // Determine which API key to use: personal or platform
-    let apiKey = aiConfig.api_key_encrypted;
-    let usingPlatformKey = false;
-    
-    if (!apiKey && aiConfig.use_platform_ai) {
-      apiKey = process.env.OPENROUTER_API_KEY;
-      usingPlatformKey = true;
-    }
-    
+    const apiKey = aiConfig?.api_key || process.env.OPENROUTER_API_KEY;
     if (!apiKey) {
-      console.error('AI API key is missing for user:', user.id);
-      return res.status(400).json({ error: 'AI API key not found. Please reconfigure your AI provider in settings.' });
-    }
-    
-    console.log(`Using ${usingPlatformKey ? 'platform' : 'personal'} API key for user ${user.id}`);
-
-    // Get user's worker/store info for context
-    const workers = await db.getWorkersByUser(user.id);
-    const stores = await db.getStoresByUser(user.id);
-    
-    const activeWorker = workers.find(w => w.status === 'running' || w.status === 'configuring');
-    const activeStore = stores[0]; // Use first store for context
-
-    // Get credentials for the active store
-    let credentials: any[] = [];
-    if (activeStore) {
-      credentials = await db.getCredentialsByStore(activeStore.id);
+      return res.status(400).json({ error: 'No AI provider configured' });
     }
 
-    // Get store configuration for context
+    // Budget guard
+    const budgetCheck = await canMakeRequest(user.id);
+    if (!budgetCheck.allowed) {
+      return res.status(429).json({
+        error: 'Budget limit reached',
+        budget_error: true,
+        ...budgetCheck,
+      });
+    }
+
+    // Get user's active store and worker
+    const { data: stores } = await supabase
+      .from('stores')
+      .select('*')
+      .eq('user_id', user.id);
+    
+    const activeStore = stores?.find((s: any) => s.is_active) || stores?.[0];
+    
+    // Get active worker
+    const { data: workers } = await supabase
+      .from('vps_workers')
+      .select('*')
+      .eq('user_id', user.id)
+      .eq('status', 'running')
+      .order('created_at', { ascending: false })
+      .limit(1);
+    
+    const activeWorker = workers?.[0];
+
+    // Get store config
     let storeConfig: any = null;
-    let onboardingStatus: any = null;
+    let currentQuestionIndex = 0;
+    let onboardingAnswers: Record<string, any> = {};
+    
     if (activeStore) {
       const { data: config } = await supabase
         .from('store_configs')
         .select('*')
         .eq('store_id', activeStore.id)
         .single();
-      storeConfig = config;
-      onboardingStatus = config ? {
-        status: config.onboarding_status,
-        step: config.onboarding_step,
-        isComplete: config.onboarding_status === 'complete',
-      } : null;
+      
+      if (config) {
+        storeConfig = config;
+        currentQuestionIndex = config.current_question_index || 0;
+        onboardingAnswers = config.onboarding_answers || {};
+      } else {
+        // Create initial config
+        const { data: newConfig } = await supabase
+          .from('store_configs')
+          .insert({
+            store_id: activeStore.id,
+            user_id: user.id,
+            onboarding_status: 'incomplete',
+            current_question_index: 0,
+            onboarding_answers: {},
+          })
+          .select()
+          .single();
+        storeConfig = newConfig;
+      }
     }
 
-    // Build context-enhanced system prompt
+    // Check if we're in onboarding mode
+    const isOnboarding = !storeConfig || storeConfig.onboarding_status !== 'complete';
+    
+    // Get credentials
+    const { data: credentials } = await supabase
+      .from('api_credentials')
+      .select('*')
+      .eq('store_id', activeStore?.id)
+      .eq('is_active', true);
+
+    // Build context
     let contextPrompt = SYSTEM_PROMPT;
     
-    // Add worker info
-    if (activeWorker) {
-      contextPrompt += `\n\n## Current Worker\nID: ${activeWorker.id}\nStatus: ${activeWorker.status}\nIP: ${activeWorker.ip_address || 'N/A'}\nServer ID: ${activeWorker.hetzner_server_id || 'N/A'}`;
-    }
-    
-    // Add store info
     if (activeStore) {
-      contextPrompt += `\n\n## Active Store\nName: ${activeStore.name}\nPlatform: ${activeStore.platform}\nStore ID: ${activeStore.id}`;
+      contextPrompt += `\n\n## Active Store\nName: ${activeStore.name}\nID: ${activeStore.id}`;
     }
     
-    // Add store configuration context (CRITICAL for workflow)
-    if (storeConfig && storeConfig.onboarding_status === 'complete') {
-      contextPrompt += `\n\n## STORE CONFIGURATION (Onboarding Complete ✅)\n`;
-      contextPrompt += `Niche: ${storeConfig.market_niche || storeConfig.market_subcategory || 'Not specified'}\n`;
-      contextPrompt += `Brand Voice: ${storeConfig.brand_voice || 'Not specified'}\n`;
-      contextPrompt += `Site Style: ${storeConfig.site_style || 'Not specified'}\n`;
-      if (storeConfig.target_audience) {
-        const audience = storeConfig.target_audience;
-        contextPrompt += `Target Audience: ${audience.primary?.age_range || 'General'} | ${audience.primary?.income_level || 'Various'} income\n`;
-        if (audience.psychographics?.interests?.length) {
-          contextPrompt += `Interests: ${audience.psychographics.interests.slice(0, 3).join(', ')}\n`;
-        }
-        if (audience.pain_points?.length) {
-          contextPrompt += `Key Pain Points: ${audience.pain_points.slice(0, 3).join(', ')}\n`;
-        }
-      }
-      contextPrompt += `Product Strategy: ${storeConfig.price_strategy || 'Not specified'} pricing\n`;
-      if (storeConfig.ai_context_summary) {
-        contextPrompt += `\nAI Summary: ${storeConfig.ai_context_summary}`;
-      }
-    } else if (storeConfig) {
-      contextPrompt += `\n\n## ONBOARDING STATUS (Incomplete ⚠️)\n`;
-      contextPrompt += `Current Step: ${storeConfig.onboarding_step || 1} of 11\n`;
-      contextPrompt += `Status: ${storeConfig.onboarding_status || 'incomplete'}\n`;
-      contextPrompt += `\n⚠️ CRITICAL: Store configuration is incomplete. You must prompt the user to complete onboarding before executing the workflow.`;
-    } else {
-      contextPrompt += `\n\n## ONBOARDING STATUS (Not Started ❌)\n`;
-      contextPrompt += `Status: No configuration found\n`;
-      contextPrompt += `\n⚠️ CRITICAL: User has not configured their store. They need to complete the onboarding wizard to provide market, audience, and brand information before you can help with the workflow.`;
-    }
-    
-    // Add credentials info to context
-    const configuredServices = credentials.map(c => c.service_type);
-    // ALL APIs are PRIMARY - Research APIs are NOT secondary
-    const allRequiredApis = [
-      'shopify', 
-      'cj_dropshipping', 
-      'meta_ads',
-      'openwebninja_amazon',
-      'openwebninja_walmart', 
-      'openwebninja_ebay',
-      'openwebninja_product_search',
-      'openwebninja_ecommerce'
-    ];
-    const missingApis = allRequiredApis.filter(s => !configuredServices.includes(s));
-    const hasStoreApis = configuredServices.includes('shopify') && configuredServices.includes('cj_dropshipping');
-    const hasResearchApis = configuredServices.includes('openwebninja_amazon') || configuredServices.includes('openwebninja_product_search');
-    
-    // Legacy variables for compatibility
-    const missingRequiredServices = missingApis;
-    const missingResearchApis = []; // Now treated as primary
-    
-    if (credentials.length > 0) {
-      contextPrompt += `\n\n## Configured API Keys/Integrations\nThe following integrations have API credentials stored and are available for use:`;
-      for (const cred of credentials) {
-        const hasKeys = cred.api_key || cred.access_token || cred.refresh_token || cred.password;
-        contextPrompt += `\n- ${cred.service_type}: ${hasKeys ? '✅ Configured' : '❌ Not configured'}`;
-      }
-    }
-    
-    // SEAMLESS FLOW LOGIC
-    if (storeConfig?.onboarding_status === 'complete') {
-      if (missingRequiredServices.length > 0) {
-        contextPrompt += `\n\n## NEXT STEP: API Keys Required 🔑\n`;
-        contextPrompt += `Onboarding is complete! Now we need to connect ALL platforms and research APIs.\n`;
-        contextPrompt += `⚠️ CRITICAL: Research APIs (Amazon, Walmart, eBay, Product Search, E-commerce) are PRIMARY - not optional.\n`;
-        contextPrompt += `These are essential for product research and competitive analysis.\n\n`;
-        contextPrompt += `Missing APIs: ${missingApis.join(', ')}\n`;
-        contextPrompt += `\nINSTRUCTIONS FOR USER:\n`;
-        contextPrompt += `1. Click "API Keys" in the right sidebar\n`;
-        contextPrompt += `2. Enter ALL your API keys:\n`;
-        contextPrompt += `   - Shopify (Store management)\n`;
-        contextPrompt += `   - CJ Dropshipping (Supplier & fulfillment)\n`;
-        contextPrompt += `   - Meta Ads (Advertising)\n`;
-        contextPrompt += `   - OpenWeb Ninja - Amazon Data (Product research)\n`;
-        contextPrompt += `   - OpenWeb Ninja - Walmart Data (Product research)\n`;
-        contextPrompt += `   - OpenWeb Ninja - eBay Data (Product research)\n`;
-        contextPrompt += `   - OpenWeb Ninja - Product Search (Cross-platform research)\n`;
-        contextPrompt += `   - OpenWeb Ninja - E-commerce Data (Market analysis)\n`;
-        contextPrompt += `3. Click "Save" for each API\n`;
-        contextPrompt += `4. Return to chat and say "I've added my API keys"\n`;
-        contextPrompt += `\nDO NOT show a "Connect" form until ALL keys are entered!`;
+    if (isOnboarding && activeStore) {
+      // ONBOARDING MODE - ask next question
+      const question = getQuestion(currentQuestionIndex);
+      
+      if (question) {
+        contextPrompt += `\n\n## ONBOARDING IN PROGRESS\n`;
+        contextPrompt += `Question ${currentQuestionIndex + 1} of ${TOTAL_ONBOARDING_QUESTIONS}\n`;
+        contextPrompt += `Completed: ${Object.keys(onboardingAnswers).length} questions\n\n`;
+        contextPrompt += `CURRENT QUESTION:\n${question.question}\n\n`;
+        contextPrompt += `Ask this question now. Include the appropriate FORM block.`;
+        
+        // Add form format
+        const formData: any = { type: question.type };
+        if (question.options) formData.options = question.options;
+        if (question.placeholder) formData.placeholder = question.placeholder;
+        if (question.multi) formData.multi = true;
+        if (question.min !== undefined) formData.min = question.min;
+        if (question.max !== undefined) formData.max = question.max;
+        if (question.prefix) formData.prefix = question.prefix;
+        
+        contextPrompt += `\n\n[[FORM]]\n${JSON.stringify(formData)}\n[[/FORM]]`;
       } else {
-        contextPrompt += `\n\n## ✅ FULLY CONFIGURED\n`;
-        contextPrompt += `All systems ready! The user can now start AI workflows.\n`;
-        contextPrompt += `Offer to start: product research, store setup, ad campaigns, or order fulfillment.`;
+        // All questions answered!
+        contextPrompt += `\n\n## ONBOARDING COMPLETE!\n`;
+        contextPrompt += `All ${TOTAL_ONBOARDING_QUESTIONS} questions answered.\n`;
+        contextPrompt += `Congratulate the user and tell them to add their API keys in the sidebar.`;
+      }
+    } else if (storeConfig?.onboarding_status === 'complete') {
+      // Check API keys
+      const configuredServices = (credentials || []).map((c: any) => c.service_type);
+      const missingApis = [
+        'shopify', 'cj_dropshipping', 'meta_ads',
+        'openwebninja_amazon', 'openwebninja_walmart',
+        'openwebninja_ebay', 'openwebninja_product_search',
+        'openwebninja_ecommerce'
+      ].filter(s => !configuredServices.includes(s));
+      
+      if (missingApis.length > 0) {
+        contextPrompt += `\n\n## NEXT: API KEYS REQUIRED\n`;
+        contextPrompt += `Missing: ${missingApis.join(', ')}\n`;
+        contextPrompt += `Tell user to click "API Keys" in sidebar and enter all keys.`;
+      } else {
+        contextPrompt += `\n\n## FULLY CONFIGURED ✅\n`;
+        contextPrompt += `All APIs connected. Offer to start workflows.`;
       }
     }
 
-    // Build messages array
+    // Build messages
     const messages = [
       { role: 'system', content: contextPrompt },
-      ...conversation_history.slice(-10), // Keep last 10 messages for context
+      ...conversation_history.slice(-10),
       { role: 'user', content: message },
     ];
 
-    // Call OpenRouter (with budget guard)
-    const aiResponse = await callOpenRouter(messages, apiKey, aiConfig.model, user.id);
+    // Call AI
+    const aiResponse = await callOpenRouter(messages, apiKey, aiConfig?.model, user.id);
 
-    // Parse for commands (using [[COMMAND]] format)
-    let commandResult = null;
-    const commandMatch = aiResponse.content.match(/\[\[COMMAND\]\]\s*(\{.*?\})\s*\[\[\/COMMAND\]\]/s);
-    
-    if (commandMatch) {
-      try {
-        const command = JSON.parse(commandMatch[1]);
-        console.log('Parsed command:', command);
-        
-        // Execute the command
-        if (command.action === 'worker_command') {
-          commandResult = await executeWorkerCommand(command, activeWorker, user.id, activeStore);
-        } else if (command.action === 'run_task' && activeWorker) {
-          commandResult = await executeTask(command, activeWorker, user.id);
-        }
-        
-        // Remove the command block from the response shown to user
-        aiResponse.content = aiResponse.content.replace(/\[\[COMMAND\]\]\s*\{.*?\}\s*\[\[\/COMMAND\]\]\s*/s, '').trim();
-      } catch (e) {
-        console.error('Failed to parse command:', e);
-      }
-    }
+    // Track spend
+    await trackSpend(user.id, aiResponse.content?.length || 0, 'chat');
 
-    // Check for budget alert from the response
-    const budgetAlert = (aiResponse as any).budgetAlert;
-    
-    // SEAMLESS FLOW: Show API splash screen when onboarding is complete
-    let showAPISplash = false;
-    
-    // If onboarding is complete but missing API keys, trigger splash screen
-    if (storeConfig?.onboarding_status === 'complete' && missingApis.length > 0) {
-      // Check if user is confirming they've added API keys
-      const hasAddedKeys = message.toLowerCase().includes('added') || 
-                          message.toLowerCase().includes('entered') ||
-                          message.toLowerCase().includes('saved') ||
-                          message.toLowerCase().includes('done') ||
-                          message.toLowerCase().includes('yes') ||
-                          message.toLowerCase().includes('continue');
-      
-      // Check if we already showed the splash screen in this conversation
-      const alreadyShowedSplash = conversation_history.some((m: any) => 
-        m.content?.includes('[[API_SPLASH]]') || m.role === 'assistant' && m.content?.includes('Connect Your Platforms')
-      );
-      
-      if (!hasAddedKeys && !alreadyShowedSplash) {
-        // Mark to show splash screen in response
-        showAPISplash = true;
-      }
-    }
-    
-    // Legacy: If all required APIs are configured but missing research APIs
-    if (storeConfig?.onboarding_status === 'complete' && 
-        missingApis.length === 0) {
-      const isResearchResponse = message.toLowerCase().includes('research') ||
-                                message.toLowerCase().includes('amazon') ||
-                                message.toLowerCase().includes('walmart');
-      
-      if (!isResearchResponse && !aiResponse.content.includes('[[FORM]]')) {
-        autoForm = {
-          type: 'connect',
-          services: [
-            { id: 'openwebninja_amazon', name: 'Amazon Data', description: 'Real-time Amazon product data' },
-            { id: 'openwebninja_walmart', name: 'Walmart Data', description: 'Real-time Walmart product data' },
-            { id: 'openwebninja_ebay', name: 'eBay Data', description: 'Real-time eBay product data' },
-            { id: 'openwebninja_product_search', name: 'Product Search', description: 'Cross-platform product search' },
-            { id: 'openwebninja_ecommerce', name: 'E-commerce Data', description: 'Multi-platform commerce data' }
-          ]
+    // If in onboarding, save the answer
+    if (isOnboarding && activeStore && currentQuestionIndex < TOTAL_ONBOARDING_QUESTIONS) {
+      const question = getQuestion(currentQuestionIndex);
+      if (question) {
+        // Save answer
+        const updatedAnswers = {
+          ...onboardingAnswers,
+          [question.id]: message,
         };
-        aiResponse.content += `\n\n[[FORM]]\n${JSON.stringify(autoForm)}\n[[/FORM]]`;
+        
+        const nextIndex = currentQuestionIndex + 1;
+        const isComplete = nextIndex >= TOTAL_ONBOARDING_QUESTIONS;
+        
+        await supabase
+          .from('store_configs')
+          .update({
+            current_question_index: nextIndex,
+            onboarding_answers: updatedAnswers,
+            onboarding_status: isComplete ? 'complete' : 'in_progress',
+            updated_at: new Date().toISOString(),
+          })
+          .eq('store_id', activeStore.id);
+        
+        // Also save to memory for AI context
+        await saveToMemory(activeStore.id, user.id, question.id, message);
       }
+    }
+
+    // Check for budget alert
+    const budgetStatus = await getBudgetStatus(user.id);
+    let budgetAlert = null;
+    if (budgetStatus.percentageUsed > 80) {
+      budgetAlert = formatBudgetAlert(budgetStatus);
     }
 
     res.json({
       response: aiResponse.content,
-      command_executed: commandResult,
       worker_status: activeWorker?.status || 'none',
       store: activeStore?.name || null,
-      budget_alert: budgetAlert || null,
-      onboarding_status: onboardingStatus || { isComplete: false, status: 'not_started' },
-      interactive,
-      show_api_splash: showAPISplash,
+      budget_alert: budgetAlert,
+      onboarding_status: {
+        isComplete: storeConfig?.onboarding_status === 'complete',
+        currentQuestion: currentQuestionIndex,
+        totalQuestions: TOTAL_ONBOARDING_QUESTIONS,
+      },
     });
 
   } catch (error: any) {
     console.error('AI chat error:', error);
-    
-    // Handle budget guard errors specially
-    if (error.isBudgetError) {
-      const guardResult = error.guardResult;
-      return res.status(429).json({
-        error: 'Budget limit reached',
-        budget_error: true,
-        reason: guardResult.reason,
-        remaining: guardResult.remaining,
-        suggestion: guardResult.suggestion,
-        resets_at: guardResult.resetsAt?.toISOString(),
-        percentage_used: guardResult.percentageUsed,
-      });
-    }
-    
     res.status(500).json({ error: error.message || 'Failed to process chat' });
   }
 });
 
-// Execute worker commands
-async function executeWorkerCommand(command: any, worker: any, userId: string, store: any) {
-  const { command: cmd, worker_id, store_id } = command;
-  
+// Save onboarding answer to memory
+async function saveToMemory(storeId: string, userId: string, questionId: string, answer: string) {
   try {
-    switch (cmd) {
-      case 'status':
-        if (!worker || !worker.hetzner_server_id) {
-          return { status: 'error', message: 'VPS not provisioned yet' };
-        }
-        const hetzner = (await import('../services/hetznerService')).getHetznerService();
-        const server = await hetzner.getServer(parseInt(worker.hetzner_server_id));
-        return { 
-          status: 'success', 
-          data: {
-            server_status: server.status,
-            ip: server.public_net.ipv4.ip,
-            type: server.server_type.name,
-            cores: server.server_type.cores,
-            memory: server.server_type.memory,
-          }
-        };
-        
-      case 'provision':
-        // Find or create a worker for this store
-        let targetWorker = worker;
-        if (!targetWorker) {
-          // Create a new worker
-          const { data: newWorker, error } = await supabase
-            .from('workers')
-            .insert({
-              user_id: userId,
-              store_id: store?.id,
-              status: 'provisioning',
-            })
-            .select()
-            .single();
-          if (error) throw new Error('Failed to create worker: ' + error.message);
-          targetWorker = newWorker;
-        }
-        
-        if (targetWorker.status === 'running' || targetWorker.status === 'configuring' || targetWorker.status === 'provisioning') {
-          return { status: 'error', message: 'Worker already provisioned or provisioning' };
-        }
-        
-        // Trigger provisioning
-        const provisioner = createVPSProvisioner();
-        
-        // Update worker status to provisioning
-        await db.updateWorker(targetWorker.id, { status: 'provisioning' });
-        
-        // Start provisioning asynchronously
-        provisioner.provisionVPS({
-          workerId: targetWorker.id,
-          storeId: store?.id || '',
-          userId: userId,
-          envVars: {}
-        })
-          .then(async (result) => {
-            console.log('Provisioning result:', result);
-            if (result.status === 'success') {
-              await db.updateWorker(targetWorker.id, { 
-                status: 'configuring',
-                hetzner_server_id: result.serverId.toString(),
-                ip_address: result.ipAddress,
-              });
-            } else {
-              await db.updateWorker(targetWorker.id, { status: 'error' });
-            }
-          })
-          .catch(async (error) => {
-            console.error('Provisioning failed:', error);
-            await db.updateWorker(targetWorker.id, { status: 'error' });
-          });
-        
-        return { status: 'in_progress', message: 'VPS provisioning started. This will take 2-3 minutes. The worker status will update automatically.' };
-        
-      case 'reboot':
-        if (!worker || !worker.hetzner_server_id) {
-          return { status: 'error', message: 'VPS not provisioned' };
-        }
-        const hetznerReboot = (await import('../services/hetznerService')).getHetznerService();
-        await hetznerReboot.reboot(parseInt(worker.hetzner_server_id));
-        return { status: 'success', message: 'VPS reboot initiated' };
-        
-      case 'destroy':
-        if (!worker || !worker.hetzner_server_id) {
-          return { status: 'error', message: 'VPS not provisioned' };
-        }
-        const provisionerDestroy = createVPSProvisioner();
-        await provisionerDestroy.destroyVPS(parseInt(worker.hetzner_server_id), worker.id);
-        return { status: 'success', message: 'VPS destroyed' };
-        
-      default:
-        return { status: 'error', message: `Unknown command: ${cmd}` };
-    }
-  } catch (error: any) {
-    return { status: 'error', message: error.message };
+    await supabase.from('memory_entries').insert({
+      user_id: userId,
+      store_id: storeId,
+      type: 'onboarding_answer',
+      key: questionId,
+      value: answer,
+      created_at: new Date().toISOString(),
+    });
+  } catch (e) {
+    console.error('Failed to save memory:', e);
   }
 }
 
-// Import product research service
-import { productResearchService } from '../services/productResearchService';
-
-// Execute tasks on worker
-async function executeTask(command: any, worker: any, userId: string) {
-  const { task, params = {} } = command;
-  
-  // Validate task type
-  const taskDef = Object.values(WORKER_TASKS).find(t => t.name === task);
-  if (!taskDef) {
-    return {
-      status: 'error',
-      message: `Unknown task type: "${task}". Available tasks: ${Object.values(WORKER_TASKS).map(t => t.name).join(', ')}`
-    };
-  }
-  
-  // Handle specific tasks with real API calls
-  if (task === 'product_research') {
-    try {
-      console.log(`🔍 Starting real product research for user ${userId}`);
-      
-      const result = await productResearchService.startResearch({
-        store_id: params.store_id,
-        user_id: userId,
-        category: params.category,
-        keywords: params.keywords,
-        min_price: params.min_price,
-        max_price: params.max_price,
-      });
-      
-      return {
-        status: 'running',
-        task,
-        research_id: result.id,
-        command_id: result.id,
-        worker_id: worker.id,
-        estimated_duration: '5-10 minutes',
-        message: `Product research started. Research ID: ${result.id}`,
-        note: 'Research is running in background. Check back in 5-10 minutes for results.'
-      };
-    } catch (error: any) {
-      console.error('Product research error:', error);
-      return {
-        status: 'error',
-        task,
-        message: `Failed to start product research: ${error.message}`
-      };
-    }
-  }
-  
-  // For other tasks, queue them for the worker
-  const queue = getWorkerCommandQueue();
-  const queuedCommand = await queue.createCommand(worker.id, 'run_task', {
-    task_type: task,
-    params,
-    task_definition: taskDef,
-    user_id: userId,
-  });
-  
-  return { 
-    status: 'queued', 
-    task, 
-    params,
-    command_id: queuedCommand.id,
-    worker_id: worker.id,
-    estimated_duration: taskDef.duration_estimate,
-    message: `Task "${task}" has been queued for the worker. Estimated duration: ${taskDef.duration_estimate}` 
-  };
-}
-
-// Get worker status for chat context
-router.get('/context', authenticate, async (req: Request, res: Response) => {
+// Get onboarding progress
+router.get('/onboarding-progress/:storeId', authenticate, async (req: Request, res: Response) => {
   try {
+    const { storeId } = req.params;
     const user = (req as any).user;
     
-    const workers = await db.getWorkersByUser(user.id);
-    const stores = await db.getStoresByUser(user.id);
-    const aiConfig = await db.getAIConfig(user.id);
-    
-    res.json({
-      workers: workers.map(w => ({
-        id: w.id,
-        status: w.status,
-        ip: w.ip_address,
-        server_id: w.hetzner_server_id,
-      })),
-      stores: stores.map(s => ({
-        id: s.id,
-        name: s.name,
-        platform: s.platform,
-      })),
-      ai_configured: !!aiConfig,
-    });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Run a task on the worker
-router.post('/task', authenticate, async (req: Request, res: Response) => {
-  try {
-    const user = (req as any).user;
-    const { task, store_id, ...params } = req.body;
-    
-    if (!task) {
-      return res.status(400).json({ error: 'Task name is required' });
-    }
-    
-    // Get active worker for user
-    const workers = await db.getWorkersByUser(user.id);
-    const activeWorker = workers.find(w => w.status === 'running' || w.status === 'provisioning');
-    
-    if (!activeWorker) {
-      return res.status(400).json({ 
-        error: 'No active worker found',
-        message: 'Please setup a VPS worker first'
-      });
-    }
-    
-    // Check if AI is configured
-    const aiConfig = await db.getAIConfig(user.id);
-    if (!aiConfig) {
-      return res.status(400).json({ 
-        error: 'AI not configured',
-        message: 'Please configure AI provider in Integrations'
-      });
-    }
-    
-    // Get task definition
-    const taskDef = Object.values(WORKER_TASKS).find(t => t.name === task);
-    if (!taskDef) {
-      return res.status(400).json({ 
-        error: 'Unknown task',
-        available: Object.values(WORKER_TASKS).map(t => t.name)
-      });
-    }
-    
-    // Queue the task
-    const queue = getWorkerCommandQueue();
-    const queuedCommand = await queue.createCommand(activeWorker.id, 'run_task', {
-      task_type: task,
-      task_params: { store_id, ...params },
-      task_definition: taskDef,
-      user_id: user.id,
-    });
-    
-    res.json({
-      success: true,
-      task: task,
-      status: 'queued',
-      command_id: queuedCommand.id,
-      worker_id: activeWorker.id,
-      estimated_duration: taskDef.duration_estimate,
-      message: `Task "${task}" queued successfully. Estimated duration: ${taskDef.duration_estimate}`
-    });
-  } catch (error: any) {
-    console.error('Task execution error:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Stop worker
-router.post('/stop-worker', authenticate, async (req: Request, res: Response) => {
-  try {
-    const user = (req as any).user;
-    const { worker_id } = req.body;
-    
-    const worker = await db.getWorkerById(worker_id);
-    if (!worker || worker.user_id !== user.id) {
-      return res.status(404).json({ error: 'Worker not found' });
-    }
-    
-    // Update worker status
-    await db.updateWorker(worker_id, { status: 'idle' });
-    
-    res.json({ success: true, message: 'Worker stopped' });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Restart worker
-router.post('/restart-worker', authenticate, async (req: Request, res: Response) => {
-  try {
-    const user = (req as any).user;
-    const { worker_id } = req.body;
-    
-    const worker = await db.getWorkerById(worker_id);
-    if (!worker || worker.user_id !== user.id) {
-      return res.status(404).json({ error: 'Worker not found' });
-    }
-    
-    // Update worker status
-    await db.updateWorker(worker_id, { status: 'running' });
-    
-    res.json({ success: true, message: 'Worker restarted' });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Generate onboarding contextual response (summary + next question)
-router.post('/onboarding-next', authenticate, async (req: Request, res: Response) => {
-  try {
-    const user = (req as any).user;
-    const { currentQuestionId, currentAnswer, previousAnswers, nextQuestion, storeInfo } = req.body;
-
-    // Get user's AI config
-    const aiConfig = await db.getAIConfig(user.id);
-    if (!aiConfig) {
-      return res.status(400).json({ error: 'AI not configured' });
-    }
-
-    const apiKey = aiConfig.api_key_encrypted || process.env.OPENROUTER_API_KEY;
-
-    // Build prompt for contextual response
-    const systemPrompt = `You are a helpful AI assistant guiding a user through store onboarding for a dropshipping platform.
-
-Your task:
-1. Briefly acknowledge and summarize their previous answer (1-2 sentences)
-2. Naturally transition to the next question
-3. Make it feel conversational and friendly
-4. Keep it concise (under 100 words total)
-
-The flow should feel like a natural conversation, not a form.`;
-
-    const messages = [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: `Previous answers so far: ${JSON.stringify(previousAnswers)}
-
-They just answered "${currentQuestionId}" with: "${currentAnswer}"
-
-Next question to ask: "${nextQuestion}"
-
-Please respond with:
-1. A brief acknowledgement of their answer (acknowledge the industry/category they picked with enthusiasm)
-2. The next question naturally phrased as part of the conversation` }
-    ];
-
-    const response = await axios.post(
-      'https://openrouter.ai/api/v1/chat/completions',
-      {
-        model: aiConfig.model || 'moonshotai/kimi-k2.5',
-        messages,
-        temperature: 0.8,
-        max_tokens: 200,
-      },
-      {
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-          'HTTP-Referer': 'https://shoppdropp.com',
-          'X-Title': 'ShoppDropp AI Agent',
-        },
-      }
-    );
-
-    const aiResponse = response.data.choices[0].message.content;
-
-    res.json({
-      response: aiResponse,
-      success: true,
-    });
-  } catch (error: any) {
-    console.error('Onboarding context error:', error);
-    // Return fallback if AI fails
-    res.json({
-      response: `Great choice! Let's continue.\\n\\n${req.body.nextQuestion}`,
-      fallback: true,
-    });
-  }
-});
-
-// DEBUG: Test AI configuration and API key
-router.get('/debug-ai-config', authenticate, async (req: Request, res: Response) => {
-  try {
-    const user = (req as any).user;
-    const aiConfig = await db.getAIConfig(user.id);
-    
-    if (!aiConfig) {
-      return res.json({ configured: false, message: 'No AI config found' });
-    }
-    
-    // Test the API key with a simple request
-    let apiTestResult = null;
-    let apiTestError = null;
-    
-    if (aiConfig.api_key_encrypted) {
-      try {
-        const testResponse = await axios.get('https://openrouter.ai/api/v1/auth/key', {
-          headers: {
-            'Authorization': `Bearer ${aiConfig.api_key_encrypted}`,
-          },
-          timeout: 5000,
-        });
-        apiTestResult = {
-          valid: true,
-          data: testResponse.data,
-        };
-      } catch (error: any) {
-        apiTestResult = {
-          valid: false,
-          status: error.response?.status,
-          error: error.response?.data?.error?.message || error.message,
-        };
-      }
-    }
-    
-    res.json({
-      configured: true,
-      provider: aiConfig.provider,
-      model: aiConfig.model,
-      keyLength: aiConfig.api_key_encrypted?.length || 0,
-      keyPrefix: aiConfig.api_key_encrypted ? `${aiConfig.api_key_encrypted.substring(0, 15)}...` : null,
-      keySuffix: aiConfig.api_key_encrypted ? `...${aiConfig.api_key_encrypted.slice(-5)}` : null,
-      apiTest: apiTestResult,
-    });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Save a chat message
-router.post('/messages', authenticate, async (req: Request, res: Response) => {
-  try {
-    const user = (req as any).user;
-    const { store_id, role, content, metadata = {} } = req.body;
-
-    if (!role || !content) {
-      return res.status(400).json({ error: 'role and content are required' });
-    }
-
-    const { data: message, error } = await supabase
-      .from('chat_messages')
-      .insert({
-        user_id: user.id,
-        store_id: store_id || null,
-        role,
-        content,
-        metadata,
-      })
-      .select()
-      .single();
-
-    if (error) {
-      console.error('Failed to save message:', error);
-      return res.status(500).json({ error: 'Failed to save message' });
-    }
-
-    res.json({ success: true, message });
-  } catch (error: any) {
-    console.error('Save message error:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Get chat messages for a user (optionally filtered by store)
-router.get('/messages', authenticate, async (req: Request, res: Response) => {
-  try {
-    const user = (req as any).user;
-    const { store_id, limit = 50 } = req.query;
-
-    let query = supabase
-      .from('chat_messages')
+    const { data: config } = await supabase
+      .from('store_configs')
       .select('*')
+      .eq('store_id', storeId)
       .eq('user_id', user.id)
-      .order('created_at', { ascending: true })
-      .limit(parseInt(limit as string));
-
-    if (store_id) {
-      query = query.eq('store_id', store_id);
+      .single();
+    
+    if (!config) {
+      return res.json({
+        currentQuestion: 0,
+        totalQuestions: TOTAL_ONBOARDING_QUESTIONS,
+        answers: {},
+        isComplete: false,
+      });
     }
-
-    const { data: messages, error } = await query;
-
-    if (error) {
-      console.error('Failed to fetch messages:', error);
-      return res.status(500).json({ error: 'Failed to fetch messages' });
-    }
-
-    res.json({ messages });
+    
+    res.json({
+      currentQuestion: config.current_question_index || 0,
+      totalQuestions: TOTAL_ONBOARDING_QUESTIONS,
+      answers: config.onboarding_answers || {},
+      isComplete: config.onboarding_status === 'complete',
+    });
   } catch (error: any) {
-    console.error('Get messages error:', error);
     res.status(500).json({ error: error.message });
   }
 });
 
-// Clear chat messages for a user/store
-router.delete('/messages', authenticate, async (req: Request, res: Response) => {
+// Reset onboarding (for editing)
+router.post('/reset-onboarding/:storeId', authenticate, async (req: Request, res: Response) => {
   try {
+    const { storeId } = req.params;
     const user = (req as any).user;
-    const { store_id } = req.query;
-
-    let query = supabase
-      .from('chat_messages')
-      .delete()
+    
+    await supabase
+      .from('store_configs')
+      .update({
+        current_question_index: 0,
+        onboarding_answers: {},
+        onboarding_status: 'incomplete',
+        updated_at: new Date().toISOString(),
+      })
+      .eq('store_id', storeId)
       .eq('user_id', user.id);
-
-    if (store_id) {
-      query = query.eq('store_id', store_id);
-    }
-
-    const { error } = await query;
-
-    if (error) {
-      console.error('Failed to clear messages:', error);
-      return res.status(500).json({ error: 'Failed to clear messages' });
-    }
-
-    res.json({ success: true, message: 'Messages cleared' });
+    
+    res.json({ success: true });
   } catch (error: any) {
-    console.error('Clear messages error:', error);
     res.status(500).json({ error: error.message });
   }
 });
