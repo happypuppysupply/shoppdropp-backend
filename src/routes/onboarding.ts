@@ -213,18 +213,25 @@ router.get('/workflow-status/:storeId', authenticate, async (req: Request, res: 
 
     const state = await onboardingService.getOnboardingState(storeId, user.id);
     const workflowCheck = onboardingService.canStartWorkflow(state.config);
-
+    
+    // Read from new onboarding_answers JSONB format
+    const answers = state.config?.onboarding_answers || {};
+    
     res.json({
       onboardingComplete: state.isComplete,
       canStartWorkflow: workflowCheck.ready,
       missingRequirements: workflowCheck.missing,
       aiConfigured: !!state.config?.ai_context_summary,
       storeConfig: {
-        market: state.config?.market_niche || state.config?.market_subcategory,
-        brandVoice: state.config?.brand_voice,
-        siteStyle: state.config?.site_style,
-        targetAudience: state.config?.target_audience?.primary,
+        market: answers.niche || answers.category || 'Not set',
+        brandVoice: answers.brand_personality || 'Not set',
+        siteStyle: answers.store_theme || 'Not set',
+        targetAudience: answers.gender || 'Not set',
       },
+      // Include full answers for new sidebar
+      onboardingAnswers: answers,
+      currentQuestion: state.config?.current_question_index || 0,
+      totalQuestions: 27,
     });
   } catch (error: any) {
     console.error('Get workflow status error:', error);
