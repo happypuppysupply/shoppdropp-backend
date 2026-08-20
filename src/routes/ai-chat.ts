@@ -79,7 +79,8 @@ router.post('/chat', authenticate, async (req: Request, res: Response) => {
     }
 
     // Budget guard
-    const budgetCheck = await canMakeRequest(user.id);
+    const model = aiConfig?.model || 'moonshotai/kimi-k2.5';
+    const budgetCheck = await canMakeRequest(user.id, model, apiKey);
     if (!budgetCheck.allowed) {
       return res.status(429).json({
         error: 'Budget limit reached',
@@ -214,8 +215,8 @@ router.post('/chat', authenticate, async (req: Request, res: Response) => {
     // Call AI
     const aiResponse = await callOpenRouter(messages, apiKey, aiConfig?.model, user.id);
 
-    // Track spend
-    await trackSpend(user.id, aiResponse.content?.length || 0, 'chat');
+    // Track spend (estimate ~0.001 per request)
+    await trackSpend(user.id, 0.001, aiConfig?.model || 'moonshotai/kimi-k2.5');
 
     // If in onboarding, save the answer
     if (isOnboarding && activeStore && currentQuestionIndex < TOTAL_ONBOARDING_QUESTIONS) {
@@ -246,10 +247,15 @@ router.post('/chat', authenticate, async (req: Request, res: Response) => {
     }
 
     // Check for budget alert
-    const budgetStatus = await getBudgetStatus(user.id);
+    const budgetStatus = await getBudgetStatus(user.id, apiKey);
     let budgetAlert = null;
-    if (budgetStatus.percentageUsed > 80) {
-      budgetAlert = formatBudgetAlert(budgetStatus);
+    if (budgetStatus && budgetStatus.percentageUsed > 80) {
+      budgetAlert = formatBudgetAlert(
+        80,
+        budgetStatus.weeklySpent,
+        budgetStatus.weeklyLimit,
+        budgetStatus.resetsAt
+      );
     }
 
     res.json({
