@@ -99,7 +99,7 @@ router.post('/chat', authenticate, async (req: Request, res: Response) => {
     
     // Get active worker
     const { data: workers } = await supabase
-      .from('vps_workers')
+      .from('workers')
       .select('*')
       .eq('user_id', user.id)
       .eq('status', 'running')
@@ -363,7 +363,7 @@ router.get('/context', authenticate, async (req: Request, res: Response) => {
     
     // Get active worker
     const { data: workers } = await supabase
-      .from('vps_workers')
+      .from('workers')
       .select('*')
       .eq('user_id', user.id)
       .eq('status', 'running')
@@ -415,7 +415,7 @@ router.get('/context', authenticate, async (req: Request, res: Response) => {
       workers: activeWorker ? [{
         id: activeWorker.id,
         status: activeWorker.status,
-        ip: activeWorker.ip,
+        ip: activeWorker.ip_address,
       }] : [],
       credentials: credentials || [],
       budget: {
