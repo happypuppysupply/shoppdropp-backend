@@ -44,13 +44,21 @@ router.get('/workflow-status/:storeId', authenticate, async (req: Request, res: 
 
     const hasCredential = (type: string) => credentials?.some((c: any) => c.type === type);
 
+    // Transform worker data to match frontend expectations
+    const worker = workers?.[0] ? {
+      id: workers[0].id,
+      status: workers[0].status,
+      ip: workers[0].ip_address,
+      created_at: workers[0].created_at,
+    } : null;
+
     res.json({
       onboardingComplete: config?.onboarding_status === 'complete',
       researchComplete: config?.research_complete || false,
       cjConnected: hasCredential('cj_dropshipping'),
       shopifyConnected: hasCredential('shopify'),
       metaConnected: hasCredential('meta_ads'),
-      worker: workers?.[0] || null,
+      worker: worker,
       currentStage: getCurrentStage(config, credentials),
     });
   } catch (error: any) {
