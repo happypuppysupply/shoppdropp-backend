@@ -78,7 +78,7 @@ router.post('/:id/credentials', authenticate, [
   param('id').isUUID(),
   body('type').isIn([
     'shopify', 'meta_ads', 'autods', 'cj_dropshipping', 'ai_provider', 'github', 'vercel',
-    'research_api_choice', 'openwebninja_amazon', 'openwebninja_walmart', 'openwebninja_ebay',
+    'research_api_choice', 'research_apis', 'openwebninja_amazon', 'openwebninja_walmart', 'openwebninja_ebay',
     'openwebninja_product_search', 'openwebninja_ecommerce', 'google_trends'
   ]),
   body('credentials').isObject(),
