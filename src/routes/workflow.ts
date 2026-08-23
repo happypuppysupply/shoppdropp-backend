@@ -34,12 +34,11 @@ router.get('/workflow-status/:storeId', authenticate, async (req: Request, res: 
       .select('*')
       .eq('store_id', storeId);
 
-    // Get worker
+    // Get worker (any status - running, provisioning, error, etc)
     const { data: workers } = await supabase
       .from('workers')
       .select('*')
       .eq('user_id', user.id)
-      .eq('status', 'running')
       .order('created_at', { ascending: false })
       .limit(1);
 
