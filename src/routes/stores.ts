@@ -76,7 +76,11 @@ router.get('/:id', authenticate, [
 // Save API credentials
 router.post('/:id/credentials', authenticate, [
   param('id').isUUID(),
-  body('type').isIn(['shopify', 'meta_ads', 'autods', 'cj_dropshipping', 'ai_provider', 'github', 'vercel']),
+  body('type').isIn([
+    'shopify', 'meta_ads', 'autods', 'cj_dropshipping', 'ai_provider', 'github', 'vercel',
+    'research_api_choice', 'openweb_ninja_amazon', 'openweb_ninja_walmart', 'openweb_ninja_ebay',
+    'openweb_ninja_product_search', 'openweb_ninja_ecommerce', 'google_trends'
+  ]),
   body('credentials').isObject(),
 ], async (req: Request, res: Response) => {
   const errors = validationResult(req);
