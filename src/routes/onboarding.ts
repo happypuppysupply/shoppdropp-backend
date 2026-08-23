@@ -73,13 +73,32 @@ router.get('/step/:storeId', authenticate, async (req: Request, res: Response) =
     else if (question.type === 'slider') inputType = 'slider';
     else if (question.type === 'number') inputType = 'number';
     
+    // Transform options to object format expected by frontend
+    const transformedOptions = question.options?.map((opt, idx) => {
+      // If option is already an object, return it
+      if (typeof opt === 'object' && opt !== null && 'id' in opt) {
+        return opt;
+      }
+      // Convert string option to object format
+      const strOpt = String(opt);
+      // Try to extract emoji and description from format like "Name (description)"
+      const match = strOpt.match(/^([^)]+?)(?:\s*\(([^)]+)\))?$/);
+      const name = match ? match[1].trim() : strOpt;
+      const description = match && match[2] ? match[2].trim() : undefined;
+      return {
+        id: `${question.id}_${idx}`,
+        name: name,
+        description: description,
+      };
+    });
+    
     // Map question to old format for compatibility
     res.json({
       stepNumber: currentIndex + 1,
       stepName: question.id,
       prompt: question.question,
       inputType: inputType,
-      options: question.options,
+      options: transformedOptions,
       section: question.section,
       totalSteps: 27,
     });
