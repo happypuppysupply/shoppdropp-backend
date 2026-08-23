@@ -432,4 +432,44 @@ router.get('/context', authenticate, async (req: Request, res: Response) => {
   }
 });
 
+// Simple chat endpoint - no onboarding logic, just AI response
+router.post('/simple', authenticate, async (req: Request, res: Response) => {
+  try {
+    const { message, store_id, stage } = req.body;
+    const user = (req as any).user;
+    
+    // Get system API key
+    const apiKey = process.env.OPENROUTER_API_KEY;
+    if (!apiKey) {
+      return res.status(500).json({ error: 'AI service not configured' });
+    }
+
+    // Build simple system prompt
+    const systemPrompt = `You are the ShoppDropp AI Business Advisor - an expert VC and investment banker who helps build dropshipping businesses.
+
+Current workflow stage: ${stage || 'onboarding'}
+
+Be concise, professional, and helpful. You have access to:
+- OpenWeb Ninja for product research (5 platforms)
+- CJ Dropshipping for sourcing
+- Shopify for store building
+- Meta Ads for marketing
+- Railway for video generation
+
+Guide users through the workflow: Onboarding → Research → CJ → Shopify → Meta Ads.`;
+
+    const messages = [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: message }
+    ];
+
+    const aiResponse = await callOpenRouter(messages, apiKey, 'moonshotai/kimi-k2.5', user.id);
+
+    res.json({ response: aiResponse.content });
+  } catch (error: any) {
+    console.error('Simple chat error:', error);
+    res.status(500).json({ error: error.message || 'Failed to get AI response' });
+  }
+});
+
 export default router;
