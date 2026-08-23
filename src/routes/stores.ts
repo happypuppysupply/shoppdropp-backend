@@ -37,7 +37,6 @@ router.post('/', authenticate, [
       user_id: req.user!.id,
       name,
       url,
-      platform: 'shopify',
       status: 'pending',
     });
 

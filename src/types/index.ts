@@ -14,7 +14,6 @@ export interface Store {
   user_id: string;
   name: string;
   url: string;
-  platform: 'shopify';
   worker_id?: string;
   status: 'pending' | 'provisioning' | 'active' | 'error';
   // Store configuration fields
