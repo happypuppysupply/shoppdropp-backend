@@ -530,4 +530,46 @@ ${data.visualStyle === 'playful' ? '- Use fun, engaging visuals and casual langu
 `;
 }
 
+// Reset onboarding for a store
+router.post('/reset/:storeId', authenticate, async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user;
+    const { storeId } = req.params;
+
+    // Verify store belongs to user
+    const store = await db.getStoreById(storeId);
+    if (!store || store.user_id !== user.id) {
+      return res.status(404).json({ error: 'Store not found' });
+    }
+
+    // Reset store config onboarding data
+    const { error: configError } = await supabase
+      .from('store_configs')
+      .update({
+        current_question_index: 0,
+        onboarding_answers: {},
+        onboarding_status: 'incomplete',
+        onboarding_step: 1,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('store_id', storeId)
+      .eq('user_id', user.id);
+
+    if (configError) throw configError;
+
+    // Delete all memory entries for this store's onboarding
+    await supabase
+      .from('memory_entries')
+      .delete()
+      .eq('store_id', storeId)
+      .eq('user_id', user.id)
+      .eq('type', 'onboarding_answer');
+
+    res.json({ success: true, message: 'Onboarding reset successfully' });
+  } catch (error: any) {
+    console.error('Reset onboarding error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 export default router;
