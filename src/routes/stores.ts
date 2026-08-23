@@ -13,7 +13,7 @@ const workerManager = new WorkerManager();
 router.get('/', authenticate, async (req: Request, res: Response) => {
   try {
     const stores = await db.getStoresByUser(req.user!.id);
-    res.json(stores);
+    res.json({ stores });
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch stores' });
   }
