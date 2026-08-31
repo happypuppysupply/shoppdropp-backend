@@ -34,6 +34,11 @@ import provisionStatusRoutes from './routes/provision-status';
 import onboardingRoutes from './routes/onboarding';
 import credentialsRoutes from './routes/credentials';
 import workflowRoutes from './routes/workflow';
+import creditsRoutes from './routes/credits';
+import apifyRoutes from './routes/apify';
+import apifyDiscoveryRoutes from './routes/apify-discovery';
+import researchRoutes from './routes/research';
+import { setupResearchWebSocket } from './routes/research-ws';
 
 // Services
 import { WorkerManager } from './services/workerManager';
@@ -91,6 +96,10 @@ app.use('/api/provision', provisionStatusRoutes);
 app.use('/api/onboarding', onboardingRoutes);
 app.use('/api/credentials', credentialsRoutes);
 app.use('/api/workflow', workflowRoutes);
+app.use('/api/credits', creditsRoutes);
+app.use('/api/apify', apifyRoutes);
+app.use('/api/apify', apifyDiscoveryRoutes);
+app.use('/api/research', researchRoutes);
 
 // Initialize Hetzner service if token is available
 if (process.env.HETZNER_API_TOKEN) {
@@ -222,6 +231,58 @@ server.on('upgrade', async (request, socket, head) => {
       
     } catch (error) {
       console.error('[WS-Upgrade] Error:', error);
+      socket.write('HTTP/1.1 500 Internal Server Error\r\n\r\n');
+      socket.destroy();
+    }
+    return;
+  }
+  
+  // Handle research WebSocket connections
+  if (url.startsWith('/ws/research')) {
+    console.log(`[WS-Upgrade] Handling research WebSocket for ${url}`);
+    
+    try {
+      // Extract token from query params
+      let token: string | null = null;
+      try {
+        const urlObj = new URL(url, 'http://localhost');
+        token = urlObj.searchParams.get('token');
+      } catch (e) {}
+      
+      if (!token) {
+        console.log('[WS-Upgrade] Research: No token');
+        socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+        socket.destroy();
+        return;
+      }
+      
+      // Verify JWT
+      let userId: string;
+      try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET || config.jwt.secret) as any;
+        userId = decoded.userId || decoded.sub;
+        console.log(`[WS-Upgrade] Research auth verified for user: ${userId}`);
+      } catch (err) {
+        // Try Supabase token
+        const { data: { user }, error } = await supabase.auth.getUser(token);
+        if (error || !user) {
+          socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+          socket.destroy();
+          return;
+        }
+        userId = user.id;
+      }
+      
+      // Upgrade connection
+      wss.handleUpgrade(request, socket, head, (ws) => {
+        (ws as any).user = { id: userId };
+        // Import and setup research WebSocket
+        const { setupResearchWebSocket } = require('./routes/research-ws');
+        wss.emit('research-connection', ws, request);
+      });
+      
+    } catch (error) {
+      console.error('[WS-Upgrade] Research error:', error);
       socket.write('HTTP/1.1 500 Internal Server Error\r\n\r\n');
       socket.destroy();
     }

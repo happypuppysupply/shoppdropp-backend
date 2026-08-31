@@ -216,3 +216,45 @@ create index idx_user_credentials_user_id on public.user_credentials(user_id);
 create index idx_tasks_worker_id on public.tasks(worker_id);
 create index idx_worker_logs_worker_id on public.worker_logs(worker_id);
 create index idx_worker_logs_created_at on public.worker_logs(created_at);
+
+-- Credits system tables
+-- User credits wallet
+CREATE TABLE public.user_credits (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid REFERENCES public.users(id) ON DELETE CASCADE NOT NULL,
+  balance decimal(10,2) DEFAULT 0.00 NOT NULL,
+  currency text DEFAULT 'USD',
+  lifetime_spent decimal(10,2) DEFAULT 0.00,
+  created_at timestamp with time zone DEFAULT timezone('utc'::text, now()),
+  updated_at timestamp with time zone DEFAULT timezone('utc'::text, now()),
+  UNIQUE(user_id)
+);
+
+-- Credit transactions history
+CREATE TABLE public.credit_transactions (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid REFERENCES public.users(id) ON DELETE CASCADE NOT NULL,
+  type text NOT NULL CHECK (type IN ('credit', 'debit')),
+  amount decimal(10,4) NOT NULL,
+  task_type text NOT NULL,
+  description text,
+  payment_id text,
+  balance_after decimal(10,2) NOT NULL,
+  created_at timestamp with time zone DEFAULT timezone('utc'::text, now())
+);
+
+-- RLS for credits tables
+ALTER TABLE public.user_credits ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users can view own credits"
+  ON public.user_credits FOR SELECT
+  USING (auth.uid() = user_id);
+
+ALTER TABLE public.credit_transactions ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users can view own transactions"
+  ON public.credit_transactions FOR SELECT
+  USING (auth.uid() = user_id);
+
+-- Index for credit queries
+CREATE INDEX idx_user_credits_user_id ON public.user_credits(user_id);
+CREATE INDEX idx_credit_transactions_user_id ON public.credit_transactions(user_id);
+CREATE INDEX idx_credit_transactions_created_at ON public.credit_transactions(created_at);

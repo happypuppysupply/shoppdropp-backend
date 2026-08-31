@@ -1,0 +1,184 @@
+{
+  "version": "1.0.0",
+  "description": "Official ShoppDropp Apify Actors - Selected for all users",
+  "selectedBy": "Manual curation",
+  "selectedAt": "2025-01-31T00:00:00Z",
+  "notes": "These are the FIXED actors all ShoppDropp users will use for product research. Selection criteria: high run count, positive reviews, reasonable pricing, maintained actively.",
+  
+  "actors": {
+    "tiktok": {
+      "id": "clockworks/tiktok-scraper",
+      "name": "TikTok Scraper",
+      "reason": "Most popular TikTok scraper on Apify. 50K+ runs, scrapes hashtags, users, trends, and videos. Well maintained.",
+      "pricing": "PAY_PER_PLATFORM_USAGE",
+      "estimatedCostPerRun": 0.05,
+      "category": "Social Media",
+      "capabilities": ["hashtag scraping", "user profiles", "video metadata", "trending content"],
+      "inputSchema": {
+        "hashtags": ["array of hashtags to search"],
+        "users": ["array of usernames"],
+        "maxResults": "number of results per query",
+        "includeVideoMeta": true
+      }
+    },
+    
+    "reddit": {
+      "id": "voyager/reddit-scraper",
+      "name": "Reddit Posts & Comments Scraper",
+      "reason": "Best Reddit scraper. Scrapes posts, comments, subreddits. Great for product discussions. 20K+ runs.",
+      "pricing": "PAY_PER_PLATFORM_USAGE", 
+      "estimatedCostPerRun": 0.08,
+      "category": "Social Media",
+      "capabilities": ["subreddit scraping", "post data", "comments", "upvotes", "timestamps"],
+      "inputSchema": {
+        "subreddits": ["array of subreddit names"],
+        "maxPosts": "number of posts to scrape",
+        "sortBy": "hot/top/new",
+        "includeComments": true
+      }
+    },
+    
+    "google_trends": {
+      "id": "epctex/google-trends-scraper",
+      "name": "Google Trends Scraper",
+      "reason": "Most reliable Google Trends scraper. Gets search interest data, regional trends, related queries.",
+      "pricing": "PAY_PER_PLATFORM_USAGE",
+      "estimatedCostPerRun": 0.03,
+      "category": "Data",
+      "capabilities": ["search trends", "regional data", "related queries", "interest over time"],
+      "inputSchema": {
+        "keywords": ["array of search terms"],
+        "geo": "country code (e.g., US, GB)",
+        "timeRange": "today-12-m or custom",
+        "category": "business/industry category"
+      }
+    },
+    
+    "amazon_products": {
+      "id": "junglee/amazon-crawler",
+      "name": "Amazon Product Crawler",
+      "reason": "The gold standard for Amazon scraping. 100K+ runs. Gets products, reviews, prices, bestsellers. Very reliable.",
+      "pricing": "PAY_PER_PLATFORM_USAGE",
+      "estimatedCostPerRun": 0.10,
+      "category": "E-commerce",
+      "capabilities": ["product data", "reviews", "pricing", "bestsellers", "search results", "ASIN data"],
+      "inputSchema": {
+        "searchTerms": ["array of product searches"],
+        "maxResults": "number of products",
+        "includeReviews": true,
+        "marketplaces": ["US", "UK", "DE"]
+      }
+    },
+    
+    "google_search": {
+      "id": "apify/google-search-scraper",
+      "name": "Google Search Results Scraper",
+      "reason": "Official Apify actor. Scrapes Google search results, top sites, can be used to find competitor stores.",
+      "pricing": "PAY_PER_PLATFORM_USAGE",
+      "estimatedCostPerRun": 0.04,
+      "category": "SEO",
+      "capabilities": ["search results", "organic results", "top sites", "competitor analysis"],
+      "inputSchema": {
+        "queries": ["search queries"],
+        "maxResults": "results per query",
+        "countryCode": "country for search",
+        "language": "language code"
+      }
+    },
+    
+    "youtube": {
+      "id": "streamers/youtube-scraper",
+      "name": "YouTube Scraper",
+      "reason": "Scrapes YouTube videos, channels, comments. Good for finding product review videos.",
+      "pricing": "PAY_PER_PLATFORM_USAGE",
+      "estimatedCostPerRun": 0.06,
+      "category": "Social Media",
+      "capabilities": ["video data", "channel info", "comments", "transcripts", "search results"],
+      "inputSchema": {
+        "searchKeywords": ["product keywords"],
+        "maxResults": "number of videos",
+        "includeComments": true,
+        "includeTranscript": false
+      }
+    },
+    
+    "instagram": {
+      "id": "apify/instagram-hashtag-scraper",
+      "name": "Instagram Hashtag Scraper",
+      "reason": "Official Apify actor. Scrapes Instagram posts by hashtags, great for product discovery.",
+      "pricing": "PAY_PER_PLATFORM_USAGE",
+      "estimatedCostPerRun": 0.05,
+      "category": "Social Media",
+      "capabilities": ["hashtag search", "post data", "engagement metrics", "image URLs"],
+      "inputSchema": {
+        "hashtags": ["array of hashtags"],
+        "resultsLimit": "posts to scrape",
+        "includeImages": true
+      }
+    },
+    
+    "ebay": {
+      "id": "epctex/ebay-scraper",
+      "name": "eBay Scraper",
+      "reason": "Good eBay scraper for competitor pricing and product availability.",
+      "pricing": "PAY_PER_PLATFORM_USAGE",
+      "estimatedCostPerRun": 0.04,
+      "category": "E-commerce",
+      "capabilities": ["product search", "pricing", "seller info", "auction data"],
+      "inputSchema": {
+        "searchTerms": ["product searches"],
+        "maxResults": "number of items",
+        "marketplace": "ebay.com or regional"
+      }
+    }
+  },
+
+  "researchPipeline": {
+    "phases": [
+      {
+        "phase": "1. Initial Market Scan",
+        "actors": ["tiktok", "reddit", "google_trends"],
+        "description": "Quick trend detection across social and search data"
+      },
+      {
+        "phase": "2. Competition Analysis", 
+        "actors": ["amazon_products", "ebay", "google_search"],
+        "description": "Full market analysis of competitors and pricing"
+      },
+      {
+        "phase": "3. Social Validation",
+        "actors": ["youtube", "instagram", "tiktok"],
+        "description": "Check social proof and viral content for products"
+      }
+    ]
+  },
+
+  "estimatedCosts": {
+    "quickResearch": {
+      "description": "Phase 1 only - Basic trend check",
+      "actors": ["tiktok", "reddit", "google_trends"],
+      "estimatedCostUsd": 0.16
+    },
+    "deepResearch": {
+      "description": "Phases 1+2 - Full market analysis", 
+      "actors": ["tiktok", "reddit", "google_trends", "amazon_products", "ebay", "google_search"],
+      "estimatedCostUsd": 0.34
+    },
+    "maximumResearch": {
+      "description": "All phases - Complete analysis including social validation",
+      "actors": "all",
+      "estimatedCostUsd": 0.49
+    }
+  },
+
+  "notes": {
+    "whyTheseActors": [
+      "Selected based on: high run counts (10K-100K+), positive user reviews, active maintenance",
+      "Platform usage pricing means costs scale with compute used",
+      "All actors have free trials or low minimum costs",
+      "These are industry-standard scrapers used by thousands of companies"
+    ],
+    "maintenance": "Actors should be reviewed quarterly. If an actor becomes unreliable, we switch to the next best alternative.",
+    "costOptimization": "Costs are estimates based on average runs. Actual costs depend on data volume and search complexity."
+  }
+}
