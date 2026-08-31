@@ -50,15 +50,15 @@ interface ResearchRun {
   cacheHit?: boolean;
 }
 
-// ShoppDropp Official Actors
+// ShoppDropp Official Actors - VERIFIED 2025-08-31
+// Actor IDs verified from Apify Store screenshots
 const SHOPPDROPP_ACTORS = {
-  tiktok: 'clockworks/tiktok-scraper',
-  reddit: 'voyager/reddit-scraper',
-  google_trends: 'epctex/google-trends-scraper',
-  amazon: 'junglee/amazon-crawler',
-  youtube: 'streamers/youtube-scraper',
-  instagram: 'apify/instagram-hashtag-scraper',
-  google_search: 'apify/google-search-scraper',
+  tiktok: 'GdWCkxBtKWOsKjdch',        // clockworks/tiktok-scraper
+  reddit: 'oAuCIx3ItNrs2okjQ',        // trudax/reddit-scraper-lite
+  google_trends: 'DyNQEYDj9awfGQf9A', // apify/google-trends-scraper
+  amazon: 'BG3WDrGdteHgZgbPK',        // junglee/amazon-crawler
+  // TODO Phase 2: Add YouTube (streamers/youtube-scraper)
+  // TODO Phase 2: Add Instagram (apify/instagram-hashtag-scraper)
 };
 
 export class ResearchPipeline extends EventEmitter {
@@ -211,29 +211,9 @@ export class ResearchPipeline extends EventEmitter {
       dataProcessor: (results, data) => this.processAmazonResults(results, data),
     }, accumulatedData);
 
-    // Phase 4: YouTube Research
-    if (accumulatedData.products.length < productCount * 1.5) {
-      accumulatedData = await this.runPhase(run, {
-        id: 'youtube_research',
-        name: 'YouTube Product Reviews',
-        actorId: SHOPPDROPP_ACTORS.youtube,
-        description: 'Finding product review videos',
-        inputGenerator: (ctx, data) => this.generateYouTubeInput(ctx, data),
-        dataProcessor: (results, data) => this.processYouTubeResults(results, data),
-      }, accumulatedData);
-    }
-
-    // Phase 5: Instagram Hashtag Research
-    if (accumulatedData.products.length < productCount * 1.5) {
-      accumulatedData = await this.runPhase(run, {
-        id: 'instagram_research',
-        name: 'Instagram Product Discovery',
-        actorId: SHOPPDROPP_ACTORS.instagram,
-        description: 'Scanning Instagram for products',
-        inputGenerator: (ctx, data) => this.generateInstagramInput(ctx, data),
-        dataProcessor: (results, data) => this.processInstagramResults(results, data),
-      }, accumulatedData);
-    }
+    // Phase 4-5: YouTube + Instagram (Deferred to Phase 2)
+    // These platforms will be added in a future update
+    // Currently using TikTok, Reddit, Trends, Amazon, and CJ for MVP
 
     // Phase 6: Deep Dive Expansion - Keep searching if not enough products
     accumulatedData = await this.deepDiveExpansion(run, accumulatedData, productCount);
