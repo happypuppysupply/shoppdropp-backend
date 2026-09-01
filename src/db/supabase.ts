@@ -98,7 +98,7 @@ export class Database {
   // API Credentials
   async getCredentialsByStore(storeId: string): Promise<ApiCredentials[]> {
     const { data, error } = await supabase
-      .from('api_credentials')
+      .from('credentials')
       .select('*')
       .eq('store_id', storeId);
     if (error) throw error;
@@ -107,7 +107,7 @@ export class Database {
 
   async upsertCredentials(creds: Partial<ApiCredentials>): Promise<ApiCredentials> {
     const { data, error } = await supabase
-      .from('api_credentials')
+      .from('credentials')
       .upsert(creds)
       .select()
       .single();

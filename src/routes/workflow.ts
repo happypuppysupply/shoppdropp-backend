@@ -30,7 +30,7 @@ router.get('/workflow-status/:storeId', authenticate, async (req: Request, res: 
 
     // Get credentials
     const { data: credentials } = await supabase
-      .from('api_credentials')
+      .from('credentials')
       .select('*')
       .eq('store_id', storeId);
 

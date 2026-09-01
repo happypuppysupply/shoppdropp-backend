@@ -153,10 +153,9 @@ router.post('/chat', authenticate, async (req: Request, res: Response) => {
     
     // Get credentials
     const { data: credentials } = await supabase
-      .from('api_credentials')
+      .from('credentials')
       .select('*')
       .eq('store_id', activeStore?.id)
-      .eq('is_active', true);
 
     // Build context
     let contextPrompt = SYSTEM_PROMPT;
@@ -400,10 +399,9 @@ router.get('/context', authenticate, async (req: Request, res: Response) => {
     
     // Get credentials
     const { data: credentials } = await supabase
-      .from('api_credentials')
+      .from('credentials')
       .select('*')
       .eq('store_id', activeStore?.id)
-      .eq('is_active', true);
     
     // Build context
     const context = {
