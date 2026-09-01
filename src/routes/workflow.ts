@@ -67,7 +67,7 @@ router.get('/workflow-status/:storeId', authenticate, async (req: Request, res: 
   }
 });
 
-function getCurrentStage(config: any, credentials: any[]) {
+function getCurrentStage(config: any, credentials: any[] | null) {
   if (!config || config.onboarding_status !== 'complete') return 'onboarding';
   if (!config.research_complete) return 'research';
   

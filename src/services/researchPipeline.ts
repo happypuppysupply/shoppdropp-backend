@@ -57,8 +57,8 @@ const SHOPPDROPP_ACTORS = {
   reddit: 'oAuCIx3ItNrs2okjQ',        // trudax/reddit-scraper-lite
   google_trends: 'DyNQEYDj9awfGQf9A', // apify/google-trends-scraper
   amazon: 'BG3WDrGdteHgZgbPK',        // junglee/amazon-crawler
+  instagram: 'apify/instagram-hashtag-scraper', // Phase 2
   // TODO Phase 2: Add YouTube (streamers/youtube-scraper)
-  // TODO Phase 2: Add Instagram (apify/instagram-hashtag-scraper)
 };
 
 export class ResearchPipeline extends EventEmitter {
@@ -826,7 +826,7 @@ export class ResearchPipeline extends EventEmitter {
         .trim();
       
       // Extract key product terms (2-4 words max)
-      const words = cleanName.split(/\s+/).filter(w => w.length > 2);
+      const words = cleanName.split(/\s+/).filter((w: string) => w.length > 2);
       
       if (words.length >= 2) {
         // Try to get product name (first 2-4 significant words)

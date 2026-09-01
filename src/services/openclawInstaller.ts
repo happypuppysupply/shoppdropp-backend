@@ -203,7 +203,7 @@ export async function verifyGatewayHealth(ipAddress: string, retries: number = 1
       });
       
       if (response.ok) {
-        const data = await response.json();
+        const data = await response.json() as { status: string };
         if (data.status === 'ok') {
           console.log('[OpenClaw] ✅ Health check passed');
           return true;

@@ -106,7 +106,7 @@ export class CJDropshippingService {
         }),
       });
 
-      const data = await response.json();
+      const data = await response.json() as { code: number; data?: { accessToken: string }; message?: string };
 
       if (data.code === 200 && data.data?.accessToken) {
         this.apiToken = data.data.accessToken;
@@ -148,7 +148,7 @@ export class CJDropshippingService {
       },
     });
 
-    const data: CJSearchResponse = await response.json();
+    const data = await response.json() as CJSearchResponse;
 
     if (data.code !== 200) {
       console.error('CJ search error:', data.message);
@@ -170,7 +170,7 @@ export class CJDropshippingService {
       },
     });
 
-    const data: CJProductDetailResponse = await response.json();
+    const data = await response.json() as CJProductDetailResponse;
 
     if (data.code !== 200) {
       console.error('CJ product details error:', data.message);
@@ -197,7 +197,7 @@ export class CJDropshippingService {
       }),
     });
 
-    const data: CJStockResponse = await response.json();
+    const data = await response.json() as CJStockResponse;
 
     if (data.code !== 200) {
       console.error('CJ stock check error:', data.message);
@@ -241,7 +241,7 @@ export class CJDropshippingService {
       body: JSON.stringify(request),
     });
 
-    const data: CJShippingCostResponse = await response.json();
+    const data = await response.json() as CJShippingCostResponse;
 
     if (data.code !== 200) {
       console.error('CJ shipping calculation error:', data.message);

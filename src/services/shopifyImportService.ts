@@ -158,7 +158,7 @@ export class ShopifyImportService {
         body: JSON.stringify({ pid: cjProductId }),
       });
 
-      const data = await response.json();
+      const data = await response.json() as { code: number | string };
       return data.code === 200 || data.code === '200';
     } catch (error) {
       console.error('Failed to save to CJ:', error);

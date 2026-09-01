@@ -250,7 +250,7 @@ async function testShopify(creds: any): Promise<any> {
       };
     }
 
-    const data = await response.json();
+    const data = await response.json() as { shop: { name: string; domain: string; plan_name: string } };
 
     return {
       success: true,
@@ -277,14 +277,14 @@ async function testCJDropshipping(creds: any): Promise<any> {
       }
     );
 
-    const data = await response.json();
+    const data = await response.json() as { code: number; data?: { email: string; name: string; balance: number }; message?: string };
 
     if (data.code === 200) {
       return {
         success: true,
-        email: data.data.email,
-        name: data.data.name,
-        balance: data.data.balance,
+        email: data.data?.email || '',
+        name: data.data?.name || '',
+        balance: data.data?.balance || 0,
       };
     }
 

@@ -81,7 +81,7 @@ export class ApifyService {
     });
 
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: 'Unknown error' }));
+      const error = await response.json().catch(() => ({ error: 'Unknown error' })) as { error?: string; message?: string };
       throw new Error(`Apify API error: ${response.status} - ${error.error || error.message || 'Unknown'}`);
     }
 
