@@ -336,32 +336,42 @@ router.post('/complete', authenticate, async (req: Request, res: Response) => {
     if (!store || store.user_id !== user.id) {
       return res.status(404).json({ error: 'Store not found' });
     }
+    
+    // Handle streamlined format (answers object) or legacy format
+    const answers = onboardingData.onboarding_answers || onboardingData;
+    
+    // Extract values from streamlined format
+    const category = Array.isArray(answers.category) ? answers.category[0] : answers.category;
+    const audience = Array.isArray(answers.target_audience) ? answers.target_audience : [answers.target_audience];
+    const priceRange = answers.price_range || answers.pricing || '$25-50';
+    const budget = answers.monthly_budget || answers.marketing_budget_monthly || '$1,000 - $3,000';
+    const storeName2 = answers.store_name || storeName || 'My Store';
 
-    // Update store config with all onboarding data
+    // Update store config with streamlined onboarding data
     const { data: updatedConfig, error: configError } = await db.supabase
       .from('store_configs')
       .update({
         onboarding_status: 'complete',
-        onboarding_step: 11,
-        onboarding_data: onboardingData,
-        market_category: onboardingData.category?.primary,
-        market_subcategory: onboardingData.category?.subcategory,
-        brand_voice: JSON.stringify(onboardingData.brandVoice),
-        site_style: onboardingData.visualStyle,
+        onboarding_step: answers.current_question_index || 5,
+        onboarding_data: { answers },
+        onboarding_answers: answers,
+        market_category: category?.split(' ')[0] || 'General',
+        market_subcategory: category || 'Products',
+        brand_voice: JSON.stringify({ audience: audience }),
+        site_style: 'modern',
         target_audience: {
-          primary: onboardingData.targetAudience?.[0],
-          niche_angles: onboardingData.nicheAngles,
-          demographics: onboardingData.targetAudience,
+          primary: audience[0] || 'general',
+          demographics: audience
         },
         product_strategy: {
-          pricing: onboardingData.pricing,
-          types: onboardingData.productTypes,
+          pricing: priceRange,
+          types: [category]
         },
-        marketing_budget_monthly: onboardingData.monthlyBudget,
+        marketing_budget_monthly: budget,
         business_goals: [{
-          goal: 'Launch and scale store',
-          revenue_target: onboardingData.revenueGoal,
-          primary_channel: onboardingData.primaryChannel,
+          goal: 'Launch store',
+          revenue_target: 'TBD',
+          primary_channel: 'Meta Ads'
         }],
         updated_at: new Date().toISOString(),
       })
