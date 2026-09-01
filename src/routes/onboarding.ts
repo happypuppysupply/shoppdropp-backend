@@ -363,14 +363,9 @@ router.post('/complete', authenticate, async (req: Request, res: Response) => {
         },
         pricing: {
           range: priceRange,
-          product_types: [category]
+          product_types: [category],
+          marketing_budget_monthly: parseInt(budget.replace(/[^0-9]/g, '')) || 2000,
         },
-        marketing_budget_monthly: parseInt(budget.replace(/[^0-9]/g, '')) || 2000,
-        business_goals: JSON.stringify([{
-          goal: 'Launch store',
-          revenue_target: 'TBD',
-          primary_channel: 'Meta Ads'
-        }]),
         updated_at: new Date().toISOString(),
       })
       .eq('store_id', storeId)
