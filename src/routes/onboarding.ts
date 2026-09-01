@@ -357,7 +357,6 @@ router.post('/complete', authenticate, async (req: Request, res: Response) => {
         onboarding_answers: answers,
         market_category: category?.split(' ')[0] || 'General',
         market_subcategory: category || 'Products',
-        brand_voice: JSON.stringify({ audience: audience }),
         site_style: 'modern',
         target_audience: {
           primary: audience[0] || 'general',

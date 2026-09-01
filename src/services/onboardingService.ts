@@ -430,7 +430,6 @@ Respond with JSON: {"options": [{"id": "...", "name": "...", "description": "...
       target_audience_demographics: 'target_audience',
       target_audience_psychographics: 'target_audience',
       pain_points: 'target_audience',
-      brand_voice: 'brand_voice',
       site_style: 'site_style',
       product_strategy: 'product_strategy',
       marketing_approach: 'marketing_budget_monthly',
@@ -466,7 +465,7 @@ Goals: ${config.business_goals?.map((g: any) => g.goal).join(', ') || 'Launch an
 
   // Check if onboarding is complete enough to start workflow
   canStartWorkflow(config: any): { ready: boolean; missing: string[] } {
-    const required = ['market_category', 'market_niche', 'brand_voice', 'site_style'];
+    const required = ['market_category', 'market_niche', 'site_style'];
     const missing: string[] = [];
 
     for (const field of required) {
