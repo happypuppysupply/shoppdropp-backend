@@ -54,7 +54,7 @@ router.get('/workflow-status/:storeId', authenticate, async (req: Request, res: 
 
     res.json({
       onboardingComplete: config?.onboarding_status === 'complete',
-      researchComplete: config?.research_complete || false,
+      researchComplete: config?.onboarding_data?.research_complete || false,
       cjConnected: hasCredential('cj_dropshipping'),
       shopifyConnected: hasCredential('shopify'),
       metaConnected: hasCredential('meta_ads'),
@@ -69,7 +69,7 @@ router.get('/workflow-status/:storeId', authenticate, async (req: Request, res: 
 
 function getCurrentStage(config: any, credentials: any[] | null) {
   if (!config || config.onboarding_status !== 'complete') return 'onboarding';
-  if (!config.research_complete) return 'research';
+  if (!config?.onboarding_data?.research_complete) return 'research';
   
   const hasCreds = (type: string) => credentials?.some((c: any) => c.type === type);
   
@@ -99,12 +99,14 @@ router.post('/research', authenticate, async (req: Request, res: Response) => {
     // Use system OpenWeb Ninja API
     const researchResults = await performResearch(niche, priceRange);
 
-    // Save research results
+    // Save research results in onboarding_data
     await supabase
       .from('store_configs')
       .update({
-        research_results: researchResults,
-        research_complete: true,
+        onboarding_data: {
+          research_results: researchResults,
+          research_complete: true,
+        },
         updated_at: new Date().toISOString(),
       })
       .eq('store_id', store_id);

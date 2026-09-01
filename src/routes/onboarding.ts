@@ -354,7 +354,6 @@ router.post('/complete', authenticate, async (req: Request, res: Response) => {
         onboarding_status: 'complete',
         onboarding_step: answers.current_question_index || 5,
         onboarding_data: { answers },
-        onboarding_answers: answers,
         market_category: category?.split(' ')[0] || 'General',
         market_subcategory: category || 'Products',
         site_style: 'modern',
@@ -362,16 +361,16 @@ router.post('/complete', authenticate, async (req: Request, res: Response) => {
           primary: audience[0] || 'general',
           demographics: audience
         },
-        product_strategy: {
-          pricing: priceRange,
-          types: [category]
+        pricing: {
+          range: priceRange,
+          product_types: [category]
         },
-        marketing_budget_monthly: budget,
-        business_goals: [{
+        marketing_budget_monthly: parseInt(budget.replace(/[^0-9]/g, '')) || 2000,
+        business_goals: JSON.stringify([{
           goal: 'Launch store',
           revenue_target: 'TBD',
           primary_channel: 'Meta Ads'
-        }],
+        }]),
         updated_at: new Date().toISOString(),
       })
       .eq('store_id', storeId)

@@ -465,7 +465,7 @@ Goals: ${config.business_goals?.map((g: any) => g.goal).join(', ') || 'Launch an
 
   // Check if onboarding is complete enough to start workflow
   canStartWorkflow(config: any): { ready: boolean; missing: string[] } {
-    const required = ['market_category', 'market_niche', 'site_style'];
+    const required = ['market_category', 'market_subcategory', 'site_style'];
     const missing: string[] = [];
 
     for (const field of required) {
