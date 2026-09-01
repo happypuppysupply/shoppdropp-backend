@@ -52,6 +52,14 @@ router.get('/workflow-status/:storeId', authenticate, async (req: Request, res: 
       created_at: workers[0].created_at,
     } : null;
 
+    // Calculate canStartWorkflow based on onboarding completion
+    const required = ['market_category', 'market_subcategory', 'site_style'];
+    const missing: string[] = [];
+    for (const field of required) {
+      if (!config?.[field]) missing.push(field);
+    }
+    const canStartWorkflow = config?.onboarding_status === 'complete' && missing.length === 0;
+
     res.json({
       onboardingComplete: config?.onboarding_status === 'complete',
       researchComplete: config?.onboarding_data?.research_complete || false,
@@ -60,6 +68,15 @@ router.get('/workflow-status/:storeId', authenticate, async (req: Request, res: 
       metaConnected: hasCredential('meta_ads'),
       worker: worker,
       currentStage: getCurrentStage(config, credentials),
+      canStartWorkflow,
+      missingRequirements: missing,
+      aiConfigured: true, // Platform AI is always available
+      storeConfig: config ? {
+        market: config.market_category,
+        brandVoice: config.brand_voice?.toString(),
+        siteStyle: config.site_style,
+        targetAudience: config.target_audience,
+      } : undefined,
     });
   } catch (error: any) {
     console.error('Workflow status error:', error);
