@@ -97,7 +97,7 @@ export class ShopifyImportService {
   async getShopifyCredentials(userId: string, storeId: string): Promise<ShopifyStore | null> {
     try {
       const { data: credentials } = await supabase
-        .from('store_credentials')
+        .from('credentials')
         .select('encrypted_data')
         .eq('store_id', storeId)
         .eq('type', 'shopify')
@@ -124,7 +124,7 @@ export class ShopifyImportService {
   async getCJCredentials(userId: string, storeId: string): Promise<string | null> {
     try {
       const { data: credentials } = await supabase
-        .from('store_credentials')
+        .from('credentials')
         .select('encrypted_data')
         .eq('store_id', storeId)
         .eq('type', 'cj_dropshipping')

@@ -24,14 +24,14 @@ router.get('/:storeId', authenticate, async (req: Request, res: Response) => {
 
     // Get credentials (encrypted)
     const { data: credentials, error } = await supabase
-      .from('store_credentials')
+      .from('credentials')
       .select('type, encrypted_data, created_at')
       .eq('store_id', storeId);
 
     if (error) throw error;
 
     // Return credential types (without the actual data for security)
-    const configuredTypes = (credentials || []).map(c => c.type);
+    const configuredTypes = (credentials || []).map(c => c.service_type);
 
     res.json({
       success: true,
@@ -66,10 +66,10 @@ router.get('/:storeId/:type', authenticate, async (req: Request, res: Response) 
 
     // Get credential
     const { data: credential } = await supabase
-      .from('store_credentials')
-      .select('encrypted_data')
+      .from('credentials')
+      .select('api_key_encrypted')
       .eq('store_id', storeId)
-      .eq('type', type)
+      .eq('service_type', type)
       .single();
 
     if (!credential) {
@@ -77,7 +77,7 @@ router.get('/:storeId/:type', authenticate, async (req: Request, res: Response) 
     }
 
     // Decrypt and return
-    const decrypted = decrypt(credential.encrypted_data);
+    const decrypted = decrypt(credential.api_key_encrypted);
 
     res.json({
       success: true,
@@ -98,7 +98,7 @@ router.post(
   '/',
   authenticate,
   [
-    body('type').isString().notEmpty().withMessage('Credential type is required'),
+    body('service_type').isString().notEmpty().withMessage('Credential type is required'),
     body('storeId').isString().notEmpty().withMessage('Store ID is required'),
     body('data').isObject().withMessage('Credential data is required'),
   ],
@@ -123,15 +123,15 @@ router.post(
 
       // Upsert credential
       const { data: savedCredential, error } = await supabase
-        .from('store_credentials')
+        .from('credentials')
         .upsert(
           {
             store_id: storeId,
-            type,
-            encrypted_data: encrypted,
+            service_type: type,
+            api_key_encrypted: encrypted,
             updated_at: new Date().toISOString(),
           },
-          { onConflict: 'store_id,type' }
+          { onConflict: 'store_id,service_type' }
         )
         .select()
         .single();
@@ -172,10 +172,10 @@ router.delete('/:storeId/:type', authenticate, async (req: Request, res: Respons
 
     // Delete credential
     const { error } = await supabase
-      .from('store_credentials')
+      .from('credentials')
       .delete()
       .eq('store_id', storeId)
-      .eq('type', type);
+      .eq('service_type', type);
 
     if (error) throw error;
 
@@ -197,7 +197,7 @@ router.post(
   '/test',
   authenticate,
   [
-    body('type').isString().notEmpty(),
+    body('service_type').isString().notEmpty(),
     body('data').isObject(),
   ],
   async (req: Request, res: Response) => {
