@@ -42,7 +42,7 @@ router.get('/workflow-status/:storeId', authenticate, async (req: Request, res: 
       .order('created_at', { ascending: false })
       .limit(1);
 
-    const hasCredential = (type: string) => credentials?.some((c: any) => c.type === type);
+    const hasCredential = (type: string) => credentials?.some((c: any) => c.service_type === type);
 
     // Transform worker data to match frontend expectations
     const worker = workers?.[0] ? {
@@ -53,16 +53,17 @@ router.get('/workflow-status/:storeId', authenticate, async (req: Request, res: 
     } : null;
 
     // Calculate canStartWorkflow based on onboarding completion
+    const onboardingData = config?.onboarding_data || {};
     const required = ['market_category', 'market_subcategory', 'site_style'];
     const missing: string[] = [];
     for (const field of required) {
-      if (!config?.[field]) missing.push(field);
+      if (!onboardingData[field]) missing.push(field);
     }
     const canStartWorkflow = config?.onboarding_status === 'complete' && missing.length === 0;
 
     res.json({
       onboardingComplete: config?.onboarding_status === 'complete',
-      researchComplete: config?.onboarding_data?.research_complete || false,
+      researchComplete: onboardingData.research_complete || false,
       cjConnected: hasCredential('cj_dropshipping'),
       shopifyConnected: hasCredential('shopify'),
       metaConnected: hasCredential('meta_ads'),
@@ -72,10 +73,10 @@ router.get('/workflow-status/:storeId', authenticate, async (req: Request, res: 
       missingRequirements: missing,
       aiConfigured: true, // Platform AI is always available
       storeConfig: config ? {
-        market: config.market_category,
-        brandVoice: config.brand_voice?.toString(),
-        siteStyle: config.site_style,
-        targetAudience: config.target_audience,
+        market: onboardingData.market_category,
+        brandVoice: onboardingData.site_style,
+        siteStyle: onboardingData.site_style,
+        targetAudience: onboardingData.target_audience,
       } : undefined,
     });
   } catch (error: any) {
@@ -86,9 +87,10 @@ router.get('/workflow-status/:storeId', authenticate, async (req: Request, res: 
 
 function getCurrentStage(config: any, credentials: any[] | null) {
   if (!config || config.onboarding_status !== 'complete') return 'onboarding';
-  if (!config?.onboarding_data?.research_complete) return 'research';
+  const onboardingData = config?.onboarding_data || {};
+  if (!onboardingData.research_complete) return 'research';
   
-  const hasCreds = (type: string) => credentials?.some((c: any) => c.type === type);
+  const hasCreds = (type: string) => credentials?.some((c: any) => c.service_type === type);
   
   if (!hasCreds('cj_dropshipping')) return 'cj_dropshipping';
   if (!hasCreds('shopify')) return 'shopify';
