@@ -392,21 +392,28 @@ router.post('/complete', authenticate, async (req: Request, res: Response) => {
       .update({
         onboarding_status: 'complete',
         onboarding_step: answers.current_question_index || 5,
+        onboarding_answers: answers,
         onboarding_data: {
-          answers,
-          pricing: {
-            range: priceRange,
-            product_types: [category],
-            marketing_budget_monthly: parseInt(budget.replace(/[^0-9]/g, '')) || 2000,
-          },
-          market_category: category?.split(' ')[0] || 'General',
-          market_subcategory: category || 'Products',
-          site_style: 'modern',
-          target_audience: {
-            primary: audience[0] || 'general',
-            demographics: audience
-          }
+          completed_at: new Date().toISOString(),
+          answers
         },
+        // Store key fields in proper columns (SQL migration added these)
+        site_style: 'modern',
+        market_category: category?.split(' ')[0] || 'General',
+        market_subcategory: category || 'Products',
+        target_audience: Array.isArray(audience) ? audience : [audience].filter(Boolean),
+        pricing: {
+          range: priceRange,
+          product_types: category ? [category] : [],
+          marketing_budget_monthly: parseInt(budget.replace(/[^0-9]/g, '')) || 2000,
+        },
+        marketing_budget_monthly: parseInt(budget.replace(/[^0-9]/g, '')) || 2000,
+        business_goals: [{
+          goal: 'Launch store',
+          revenue_target: 'TBD',
+          primary_channel: 'Meta Ads'
+        }],
+        brand_voice: JSON.stringify({ audience }),
         updated_at: new Date().toISOString(),
       })
       .eq('store_id', storeId)
