@@ -98,7 +98,7 @@ router.post(
   '/',
   authenticate,
   [
-    body('service_type').isString().notEmpty().withMessage('Credential type is required'),
+    body('type').isString().notEmpty().withMessage('Credential type is required'),
     body('storeId').isString().notEmpty().withMessage('Store ID is required'),
     body('data').isObject().withMessage('Credential data is required'),
   ],
