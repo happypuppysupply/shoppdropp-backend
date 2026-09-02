@@ -44,23 +44,34 @@ async function callOpenRouter(
   return response.data.choices[0].message;
 }
 
-// System prompt - STRICT enforcement of 27-question onboarding
-const SYSTEM_PROMPT = `You are the ShoppDropp AI Agent. You help users set up their dropshipping business.
+// System prompt templates
+const ONBOARDING_PROMPT = `You are the ShoppDropp AI Agent. You help users set up their dropshipping business.
 
-CRITICAL RULES - FOLLOW EXACTLY:
-1. You are in a STRUCTURED 27-question onboarding. DO NOT deviate from this script.
-2. Ask ONLY the CURRENT QUESTION provided in the context. NEVER skip ahead to API keys or other topics.
-3. After user answers, acknowledge briefly (1 sentence) then immediately ask the NEXT question from the sequence.
-4. DO NOT mention API keys, Shopify, Meta Ads, or any integrations until ALL 27 questions are complete.
-5. DO NOT offer choices like "Quick start vs Full onboarding" - always do the full 27 questions.
-6. DO NOT generate [[FORM]] blocks yourself - the system will add them automatically based on the question type.
+CRITICAL RULES:
+1. This is a 5-question streamlined onboarding. Ask one question at a time.
+2. After user answers, acknowledge briefly then ask the NEXT question.
+3. DO NOT mention API keys or integrations until ALL 5 questions are complete.
+4. DO NOT generate [[FORM]] blocks - the system adds them automatically.
 
-ONBOARDING SEQUENCE:
-- There are exactly 27 questions covering: niche, products, target audience, pricing, ad strategy, operations
-- Current question number is provided in context
-- DO NOT stop early. Complete all 27 before moving to next phase.
+QUESTION SEQUENCE:
+1. Brand name
+2. Product category/niche  
+3. Target audience
+4. Price range
+5. Marketing budget
 
-If user asks why you're asking so many questions, explain: "These 27 questions help me understand your business deeply so I can provide personalized product recommendations, pricing strategies, and marketing plans."`
+Onboarding is IN PROGRESS. Complete all 5 questions before moving to next phase.`;
+
+const POST_ONBOARDING_PROMPT = `You are the ShoppDropp AI Agent. The user has COMPLETED their onboarding.
+
+CRITICAL RULES:
+1. DO NOT ask onboarding questions again - they are already complete.
+2. Help the user with their next steps: research, connect APIs (CJ, Shopify, Meta), or run product research.
+3. Be helpful and action-oriented. Suggest what they should do next based on their business profile.
+4. If they want to start research, confirm their niche and offer to begin.
+5. DO NOT generate [[FORM]] blocks - the system adds them automatically.
+
+The user is ready to proceed with their business setup.`;
 
 // Main chat endpoint
 router.post('/chat', authenticate, async (req: Request, res: Response) => {
@@ -152,8 +163,8 @@ router.post('/chat', authenticate, async (req: Request, res: Response) => {
       .select('*')
       .eq('store_id', activeStore?.id)
 
-    // Build context
-    let contextPrompt = SYSTEM_PROMPT;
+    // Select appropriate prompt based on onboarding status
+    let contextPrompt = isOnboarding ? ONBOARDING_PROMPT : POST_ONBOARDING_PROMPT;
     
     if (activeStore) {
       contextPrompt += `\n\n## Active Store\nName: ${activeStore.name}\nID: ${activeStore.id}`;
