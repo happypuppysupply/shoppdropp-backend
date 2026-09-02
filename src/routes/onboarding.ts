@@ -296,10 +296,8 @@ router.get('/workflow-status/:storeId', authenticate, async (req: Request, res: 
     const state = await onboardingService.getOnboardingState(storeId, user.id);
     const workflowCheck = onboardingService.canStartWorkflow(state.config);
     
-    // Read from onboarding_data JSONB format
     // Read from actual columns with fallback to JSONB
     const answers = state.config?.onboarding_answers || state.config?.onboarding_data?.answers || {};
-    const answers = onboardingData.answers || {};
     
     // Get credentials
     const { data: credentials } = await supabase
@@ -327,7 +325,7 @@ router.get('/workflow-status/:storeId', authenticate, async (req: Request, res: 
     // Determine current stage
     let currentStage = 'onboarding';
     if (state.isComplete) {
-      if (!onboardingData.research_complete) currentStage = 'research';
+      if (!(state.config?.research_complete)) currentStage = 'research';
       else if (!hasCredential('cj_dropshipping')) currentStage = 'cj_dropshipping';
       else if (!hasCredential('shopify')) currentStage = 'shopify';
       else if (!hasCredential('meta_ads')) currentStage = 'meta_ads';
@@ -336,10 +334,10 @@ router.get('/workflow-status/:storeId', authenticate, async (req: Request, res: 
     
     res.json({
       onboardingComplete: state.isComplete,
-      canStartWorkflow: workflowCheck.ready,
+      canStartWorkflow: workflowCheck.ready && state.isComplete,
       missingRequirements: workflowCheck.missing,
       aiConfigured: true,
-      researchComplete: onboardingData.research_complete || false,
+      researchComplete: state.config?.research_complete || false,
       cjConnected: hasCredential('cj_dropshipping'),
       shopifyConnected: hasCredential('shopify'),
       metaConnected: hasCredential('meta_ads'),
@@ -347,9 +345,9 @@ router.get('/workflow-status/:storeId', authenticate, async (req: Request, res: 
       currentStage: currentStage,
       storeConfig: {
         market: answers.category || answers.niche || 'Not set',
-        brandVoice: onboardingData.site_style || 'Not set',
-        siteStyle: onboardingData.site_style || 'Not set',
-        targetAudience: onboardingData.target_audience || 'Not set',
+        brandVoice: state.config?.site_style || 'Not set',
+        siteStyle: state.config?.site_style || 'Not set',
+        targetAudience: state.config?.target_audience || 'Not set',
       },
       onboardingAnswers: answers,
       currentQuestion: state.config?.onboarding_step || 0,

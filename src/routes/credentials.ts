@@ -25,7 +25,7 @@ router.get('/:storeId', authenticate, async (req: Request, res: Response) => {
     // Get credentials (encrypted)
     const { data: credentials, error } = await supabase
       .from('credentials')
-      .select('type, encrypted_data, created_at')
+      .select('service_type, api_key_encrypted, created_at')
       .eq('store_id', storeId);
 
     if (error) throw error;
