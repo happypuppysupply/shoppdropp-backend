@@ -296,24 +296,63 @@ router.get('/workflow-status/:storeId', authenticate, async (req: Request, res: 
     const state = await onboardingService.getOnboardingState(storeId, user.id);
     const workflowCheck = onboardingService.canStartWorkflow(state.config);
     
-    // Read from new onboarding_answers JSONB format
-    const answers = state.config?.onboarding_answers || {};
+    // Read from onboarding_data JSONB format
+    const onboardingData = state.config?.onboarding_data || {};
+    const answers = onboardingData.answers || {};
+    
+    // Get credentials
+    const { data: credentials } = await supabase
+      .from('credentials')
+      .select('*')
+      .eq('store_id', storeId);
+    
+    const hasCredential = (type: string) => credentials?.some((c: any) => c.service_type === type);
+    
+    // Get worker
+    const { data: workers } = await supabase
+      .from('workers')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+      .limit(1);
+    
+    const worker = workers?.[0] ? {
+      id: workers[0].id,
+      status: workers[0].status,
+      ip: workers[0].ip_address,
+      created_at: workers[0].created_at,
+    } : null;
+    
+    // Determine current stage
+    let currentStage = 'onboarding';
+    if (state.isComplete) {
+      if (!onboardingData.research_complete) currentStage = 'research';
+      else if (!hasCredential('cj_dropshipping')) currentStage = 'cj_dropshipping';
+      else if (!hasCredential('shopify')) currentStage = 'shopify';
+      else if (!hasCredential('meta_ads')) currentStage = 'meta_ads';
+      else currentStage = 'complete';
+    }
     
     res.json({
       onboardingComplete: state.isComplete,
       canStartWorkflow: workflowCheck.ready,
       missingRequirements: workflowCheck.missing,
-      aiConfigured: !!state.config?.ai_context_summary,
+      aiConfigured: true,
+      researchComplete: onboardingData.research_complete || false,
+      cjConnected: hasCredential('cj_dropshipping'),
+      shopifyConnected: hasCredential('shopify'),
+      metaConnected: hasCredential('meta_ads'),
+      worker: worker,
+      currentStage: currentStage,
       storeConfig: {
-        market: answers.niche || answers.category || 'Not set',
-        brandVoice: answers.brand_personality || 'Not set',
-        siteStyle: answers.store_theme || 'Not set',
-        targetAudience: answers.gender || 'Not set',
+        market: answers.category || answers.niche || 'Not set',
+        brandVoice: onboardingData.site_style || 'Not set',
+        siteStyle: onboardingData.site_style || 'Not set',
+        targetAudience: onboardingData.target_audience || 'Not set',
       },
-      // Include full answers for new sidebar
       onboardingAnswers: answers,
-      currentQuestion: state.config?.current_question_index || 0,
-      totalQuestions: 27,
+      currentQuestion: state.config?.onboarding_step || 0,
+      totalQuestions: 5,
     });
   } catch (error: any) {
     console.error('Get workflow status error:', error);
