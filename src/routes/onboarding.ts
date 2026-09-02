@@ -353,18 +353,20 @@ router.post('/complete', authenticate, async (req: Request, res: Response) => {
       .update({
         onboarding_status: 'complete',
         onboarding_step: answers.current_question_index || 5,
-        onboarding_data: { answers },
+        onboarding_data: {
+          answers,
+          pricing: {
+            range: priceRange,
+            product_types: [category],
+            marketing_budget_monthly: parseInt(budget.replace(/[^0-9]/g, '')) || 2000,
+          }
+        },
         market_category: category?.split(' ')[0] || 'General',
         market_subcategory: category || 'Products',
         site_style: 'modern',
         target_audience: {
           primary: audience[0] || 'general',
           demographics: audience
-        },
-        pricing: {
-          range: priceRange,
-          product_types: [category],
-          marketing_budget_monthly: parseInt(budget.replace(/[^0-9]/g, '')) || 2000,
         },
         updated_at: new Date().toISOString(),
       })
