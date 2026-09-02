@@ -126,6 +126,7 @@ router.post(
         .from('credentials')
         .upsert(
           {
+            user_id: user.id,
             store_id: storeId,
             service_type: type,
             api_key_encrypted: encrypted,
