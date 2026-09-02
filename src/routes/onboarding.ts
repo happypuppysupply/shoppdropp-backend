@@ -299,6 +299,12 @@ router.get('/workflow-status/:storeId', authenticate, async (req: Request, res: 
     // Read from actual columns with fallback to JSONB
     const answers = state.config?.onboarding_answers || state.config?.onboarding_data?.answers || {};
     
+    // Determine market category from multiple sources
+    const marketCategory = state.config?.market_category || 
+                           answers?.category || 
+                           answers?.market_category || 
+                           'Not set';
+    
     // Get credentials
     const { data: credentials } = await supabase
       .from('credentials')
@@ -344,10 +350,10 @@ router.get('/workflow-status/:storeId', authenticate, async (req: Request, res: 
       worker: worker,
       currentStage: currentStage,
       storeConfig: {
-        market: answers.category || answers.niche || 'Not set',
-        brandVoice: state.config?.site_style || 'Not set',
-        siteStyle: state.config?.site_style || 'Not set',
-        targetAudience: state.config?.target_audience || 'Not set',
+        market: marketCategory,
+        brandVoice: state.config?.site_style || answers?.site_style || 'modern',
+        siteStyle: state.config?.site_style || answers?.site_style || 'modern',
+        targetAudience: state.config?.target_audience || answers?.target_audience || answers?.audience || [],
       },
       onboardingAnswers: answers,
       currentQuestion: state.config?.onboarding_step || 0,

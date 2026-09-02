@@ -469,13 +469,21 @@ Goals: ${config.business_goals?.map((g: any) => g.goal).join(', ') || 'Launch an
     const missing: string[] = [];
 
     for (const field of required) {
-      if (!config[field]) {
+      // Check direct column first, then onboarding_answers, then onboarding_data
+      let value = config[field];
+      if (!value && config.onboarding_answers) {
+        value = config.onboarding_answers[field] || config.onboarding_answers[field.replace('_', '')];
+      }
+      if (!value && config.onboarding_data?.answers) {
+        value = config.onboarding_data.answers[field] || config.onboarding_data.answers[field.replace('_', '')];
+      }
+      if (!value) {
         missing.push(field);
       }
     }
 
     return {
-      ready: missing.length === 0,
+      ready: missing.length === 0 && config.onboarding_status === 'complete',
       missing,
     };
   }
