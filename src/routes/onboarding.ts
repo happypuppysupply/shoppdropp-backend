@@ -297,7 +297,8 @@ router.get('/workflow-status/:storeId', authenticate, async (req: Request, res: 
     const workflowCheck = onboardingService.canStartWorkflow(state.config);
     
     // Read from onboarding_data JSONB format
-    const onboardingData = state.config?.onboarding_data || {};
+    // Read from actual columns with fallback to JSONB
+    const answers = state.config?.onboarding_answers || state.config?.onboarding_data?.answers || {};
     const answers = onboardingData.answers || {};
     
     // Get credentials
