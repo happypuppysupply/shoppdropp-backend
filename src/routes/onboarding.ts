@@ -222,7 +222,7 @@ router.patch('/config/:storeId', authenticate, async (req: Request, res: Respons
       return res.status(404).json({ error: 'Store not found' });
     }
 
-    const { data: updatedConfig, error } = await db.supabase
+    const { data: updatedConfig, error } = await supabase
       .from('store_configs')
       .update({
         ...updates,
@@ -258,7 +258,7 @@ router.post('/skip/:storeId', authenticate, async (req: Request, res: Response) 
       return res.status(404).json({ error: 'Store not found' });
     }
 
-    const { data: updatedConfig, error } = await db.supabase
+    const { data: updatedConfig, error } = await supabase
       .from('store_configs')
       .update({
         onboarding_step: targetStep,
@@ -392,7 +392,7 @@ router.post('/complete', authenticate, async (req: Request, res: Response) => {
     const storeName2 = answers.store_name || storeName || 'My Store';
 
     // Update store config with streamlined onboarding data
-    const { data: updatedConfig, error: configError } = await db.supabase
+    const { data: updatedConfig, error: configError } = await supabase
       .from('store_configs')
       .update({
         onboarding_status: 'complete',

@@ -299,6 +299,12 @@ server.on('upgrade', async (request, socket, head) => {
 // WebSocket handling for workers (on /ws path)
 wss.on('connection', (ws, req) => {
   const url = new URL(req.url!, `http://${req.headers.host}`);
+  
+  // Skip research WebSocket connections - handled by server.on('upgrade')
+  if (url.pathname.startsWith('/ws/research')) {
+    return;
+  }
+  
   const workerId = url.searchParams.get('workerId');
   
   if (!workerId) {
