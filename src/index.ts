@@ -273,11 +273,13 @@ server.on('upgrade', async (request, socket, head) => {
         userId = user.id;
       }
       
-      // Upgrade connection manually to avoid double handleUpgrade() call
-      // Create WebSocket directly and emit to research handler
-      const ws = new WebSocket(request, socket, head, {});
-      (ws as any).user = { id: userId };
-      wss.emit('research-connection', ws, request);
+      // Upgrade connection using wss.handleUpgrade but emit to custom event
+      // to avoid triggering the default connection handler
+      wss.handleUpgrade(request, socket, head, (ws) => {
+        (ws as any).user = { id: userId };
+        // Emit to research-connection instead of connection
+        wss.emit('research-connection', ws, request);
+      });
       
     } catch (error) {
       console.error('[WS-Upgrade] Research error:', error);

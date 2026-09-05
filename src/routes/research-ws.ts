@@ -18,6 +18,7 @@ export function setupResearchWebSocket(wss: any) {
     const clientId = `client_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
     
     // Parse query params for user authentication
+    const url = new URL(request.url || '', 'http://localhost');
     const userId = url.searchParams.get('userId');
     const storeId = url.searchParams.get('storeId');
     const runId = url.searchParams.get('runId');
