@@ -273,12 +273,10 @@ server.on('upgrade', async (request, socket, head) => {
         userId = user.id;
       }
       
-      // Upgrade connection
+      // Upgrade connection - emit 'connection' so research-ws handler catches it
       wss.handleUpgrade(request, socket, head, (ws) => {
         (ws as any).user = { id: userId };
-        // Import and setup research WebSocket
-        const { setupResearchWebSocket } = require('./routes/research-ws');
-        wss.emit('research-connection', ws, request);
+        wss.emit('connection', ws, request);
       });
       
     } catch (error) {

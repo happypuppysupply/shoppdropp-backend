@@ -15,10 +15,15 @@ export function setupResearchWebSocket(wss: any) {
   wss.on('connection', (ws: WebSocket, request: any) => {
     console.log('[Research-WS] New connection');
     
+    // Only handle research WebSocket connections
+    const url = new URL(request.url || '', 'http://localhost');
+    if (!url.pathname.startsWith('/ws/research')) {
+      return; // Skip non-research connections
+    }
+    
     const clientId = `client_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
     
     // Parse query params for user authentication
-    const url = new URL(request.url || '', 'http://localhost');
     const userId = url.searchParams.get('userId');
     const storeId = url.searchParams.get('storeId');
     const runId = url.searchParams.get('runId');
