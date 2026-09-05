@@ -47,7 +47,10 @@ import { getWorkerCommandQueue } from './services/workerCommands';
 
 const app = express();
 const server = createServer(app);
-const wss = new WebSocketServer({ server });
+
+// Create WebSocketServer WITHOUT auto-attaching to server (noServer: true)
+// We'll manually handle all upgrades to avoid conflicts
+const wss = new WebSocketServer({ noServer: true });
 const workerManager = new WorkerManager();
 
 // Middleware - CORS for lendsquid.ai and other allowed origins
