@@ -273,10 +273,11 @@ server.on('upgrade', async (request, socket, head) => {
         userId = user.id;
       }
       
-      // Upgrade connection - emit 'connection' so research-ws handler catches it
+      // Upgrade connection - wss.handleUpgrade emits 'connection' internally
+      // Just attach user data to the ws object for the handler to use
       wss.handleUpgrade(request, socket, head, (ws) => {
         (ws as any).user = { id: userId };
-        wss.emit('connection', ws, request);
+        // handleUpgrade already emitted 'connection' - don't emit again
       });
       
     } catch (error) {
