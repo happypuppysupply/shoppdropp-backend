@@ -11,15 +11,9 @@ interface ResearchWSClient {
 const clients = new Map<string, ResearchWSClient>();
 
 export function setupResearchWebSocket(wss: any) {
-  // Handle incoming WebSocket connections
-  wss.on('connection', (ws: WebSocket, request: any) => {
-    console.log('[Research-WS] New connection');
-    
-    // Only handle research WebSocket connections
-    const url = new URL(request.url || '', 'http://localhost');
-    if (!url.pathname.startsWith('/ws/research')) {
-      return; // Skip non-research connections
-    }
+  // Handle incoming research WebSocket connections (emitted from index.ts)
+  wss.on('research-connection', (ws: WebSocket, request: any) => {
+    console.log('[Research-WS] New research connection');
     
     const clientId = `client_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
     

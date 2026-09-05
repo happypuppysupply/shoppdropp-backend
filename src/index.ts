@@ -273,12 +273,11 @@ server.on('upgrade', async (request, socket, head) => {
         userId = user.id;
       }
       
-      // Upgrade connection - wss.handleUpgrade emits 'connection' internally
-      // Just attach user data to the ws object for the handler to use
-      wss.handleUpgrade(request, socket, head, (ws) => {
-        (ws as any).user = { id: userId };
-        // handleUpgrade already emitted 'connection' - don't emit again
-      });
+      // Upgrade connection manually to avoid double handleUpgrade() call
+      // Create WebSocket directly and emit to research handler
+      const ws = new WebSocket(request, socket, head, {});
+      (ws as any).user = { id: userId };
+      wss.emit('research-connection', ws, request);
       
     } catch (error) {
       console.error('[WS-Upgrade] Research error:', error);
