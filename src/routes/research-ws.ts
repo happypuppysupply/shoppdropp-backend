@@ -1,5 +1,5 @@
 import { WebSocket } from 'ws';
-import { researchPipeline } from '../services/researchPipeline';
+import { adaptiveResearchPipeline } from '../services/adaptiveResearchPipeline';
 
 interface ResearchWSClient {
   userId: string;
@@ -80,15 +80,15 @@ export function setupResearchWebSocket(wss: any) {
   });
   
   // Subscribe to pipeline events globally
-  researchPipeline.on('activity', ({ runId, activity }) => {
+  adaptiveResearchPipeline.on('activity', ({ runId, activity }) => {
     broadcastActivity(runId, activity);
   });
   
-  researchPipeline.on('complete', (run) => {
+  adaptiveResearchPipeline.on('complete', (run) => {
     broadcastComplete(run);
   });
   
-  researchPipeline.on('error', ({ runId, error }) => {
+  adaptiveResearchPipeline.on('error', ({ runId, error }) => {
     broadcastError(runId, error);
   });
 }
@@ -165,7 +165,7 @@ async function handleStartResearch(client: ResearchWSClient, context: any, force
       onboardingData: context,
     };
     
-    const runId = await researchPipeline.startResearch(researchContext, force);
+    const runId = await adaptiveResearchPipeline.startResearch(researchContext, force);
     
     // Subscribe client to new run
     subscribeToRun(client, runId);
