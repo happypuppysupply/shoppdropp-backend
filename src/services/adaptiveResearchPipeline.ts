@@ -1,0 +1,876 @@
+import { apifyService } from './apifyService';
+import { cjDropshippingService } from './cjDropshippingService';
+import { supabase } from '../db/supabase';
+import SearchCandidateGenerator, { SearchCandidate } from './searchCandidateGenerator';
+import EventEmitter from 'events';
+import { v4 as uuidv4 } from 'uuid';
+
+interface ResearchContext {
+  userId: string;
+  storeId: string;
+  onboardingData: {
+    category: string;
+    subcategory: string;
+    productCount: number;
+    priceRange: { min: number; max: number };
+    targetAudience: string;
+    brandName: string;
+  };
+}
+
+interface StreamingActivity {
+  type: 'info' | 'success' | 'warning' | 'error' | 'actor_start' | 'actor_complete' | 'product_found' | 'search_exhausted';
+  timestamp: string;
+  message: string;
+  details?: any;
+}
+
+interface ResearchRun {
+  id: string;
+  userId: string;
+  storeId: string;
+  status: 'running' | 'completed' | 'failed' | 'exhausted';
+  context: ResearchContext;
+  activities: StreamingActivity[];
+  results: Product[];
+  startTime: string;
+  endTime?: string;
+  totalCost: number;
+  productsFound: number;
+  productsVerified: number;
+  searchStats: SearchStats;
+  config: ResearchConfig;
+}
+
+interface ResearchConfig {
+  targetProducts: number;
+  maxSearchCandidates: number;
+  maxActorRuns: number;
+  maxIterations: number;
+  maxRetriesPerSearch: number;
+  batchSize: number;
+}
+
+interface SearchStats {
+  tiktokSearches: number;
+  googleTrendsSearches: number;
+  redditSearches: number;
+  amazonSearches: number;
+  totalSearches: number;
+  productsFromTikTok: number;
+  productsFromGoogleTrends: number;
+  productsFromReddit: number;
+  productsFromAmazon: number;
+  duplicateCount: number;
+  rejectedCount: number;
+}
+
+interface Product {
+  id: string;
+  name: string;
+  source: string;
+  sourceUrl?: string;
+  category: string;
+  searchTerm: string;
+  imageUrl?: string;
+  price?: number;
+  rating?: number;
+  reviewCount?: number;
+  trendSignal?: string;
+  relevanceScore: number;
+  timestamp: string;
+  raw: any;
+}
+
+// Apify Actor IDs
+const SHOPPDROPP_ACTORS = {
+  tiktok: 'GdWCkxBtKWOsKjdch',
+  reddit: 'oAuCIx3ItNrs2okjQ',
+  google_trends: 'DyNQEYDj9awfGQf9A',
+  amazon: 'BG3WDrGdteHgZgbPK',
+};
+
+export class AdaptiveResearchPipeline extends EventEmitter {
+  private activeRuns: Map<string, ResearchRun> = new Map();
+  private candidateGenerator: SearchCandidateGenerator;
+
+  constructor() {
+    super();
+    this.candidateGenerator = new SearchCandidateGenerator({
+      maxSearchCandidates: 50
+    });
+  }
+
+  /**
+   * Start adaptive research with iterative multi-search strategy
+   */
+  async startResearch(context: ResearchContext, force: boolean = false): Promise<string> {
+    const runId = uuidv4();
+    const { onboardingData } = context;
+    
+    const config: ResearchConfig = {
+      targetProducts: onboardingData.productCount || 20,
+      maxSearchCandidates: 50,
+      maxActorRuns: 100,
+      maxIterations: 20,
+      maxRetriesPerSearch: 2,
+      batchSize: 5
+    };
+
+    const run: ResearchRun = {
+      id: runId,
+      userId: context.userId,
+      storeId: context.storeId,
+      status: 'running',
+      context,
+      activities: [],
+      results: [],
+      startTime: new Date().toISOString(),
+      totalCost: 0,
+      productsFound: 0,
+      productsVerified: 0,
+      searchStats: {
+        tiktokSearches: 0,
+        googleTrendsSearches: 0,
+        redditSearches: 0,
+        amazonSearches: 0,
+        totalSearches: 0,
+        productsFromTikTok: 0,
+        productsFromGoogleTrends: 0,
+        productsFromReddit: 0,
+        productsFromAmazon: 0,
+        duplicateCount: 0,
+        rejectedCount: 0
+      },
+      config
+    };
+
+    this.activeRuns.set(runId, run);
+    
+    this.emitActivity(run.id, {
+      type: 'info',
+      timestamp: new Date().toISOString(),
+      message: `🔬 Starting adaptive research for ${onboardingData.brandName}`,
+      details: { 
+        targetProducts: config.targetProducts,
+        category: onboardingData.category,
+        subcategory: onboardingData.subcategory,
+      }
+    });
+
+    // Validate Apify token
+    if (!process.env.APIFY_TOKEN) {
+      this.emitActivity(run.id, {
+        type: 'error',
+        timestamp: new Date().toISOString(),
+        message: '❌ Research cannot start: Apify API token is not configured',
+      });
+      this.failRun(runId, 'Apify API token not configured');
+      return runId;
+    }
+
+    // Start research in background
+    this.executeAdaptivePipeline(run).catch(err => {
+      console.error(`Research run ${runId} failed:`, err);
+      this.failRun(runId, err.message);
+    });
+
+    return runId;
+  }
+
+  /**
+   * Main adaptive pipeline with iterative multi-search
+   */
+  private async executeAdaptivePipeline(run: ResearchRun): Promise<void> {
+    const { context, config } = run;
+    const { category, subcategory } = context.onboardingData;
+    
+    // Generate all search candidates
+    this.emitActivity(run.id, {
+      type: 'info',
+      timestamp: new Date().toISOString(),
+      message: '🎯 Generating search candidates...',
+    });
+
+    const candidates = this.candidateGenerator.generateCandidates(category, subcategory);
+    
+    this.emitActivity(run.id, {
+      type: 'success',
+      timestamp: new Date().toISOString(),
+      message: `✅ Generated ${candidates.tiktok.length} TikTok, ${candidates.googleTrends.length} Trends, ${candidates.reddit.length} Reddit, ${candidates.amazon.length} Amazon candidates`,
+    });
+
+    // Product collection
+    const products: Product[] = [];
+    const seenUrls = new Set<string>();
+    const seenNames = new Set<string>();
+    
+    // Track actor runs
+    let totalActorRuns = 0;
+    let iteration = 0;
+
+    // Continue searching until target reached or budget exhausted
+    while (
+      products.length < config.targetProducts &&
+      totalActorRuns < config.maxActorRuns &&
+      iteration < config.maxIterations &&
+      this.hasMoreCandidates(candidates)
+    ) {
+      iteration++;
+      
+      this.emitActivity(run.id, {
+        type: 'info',
+        timestamp: new Date().toISOString(),
+        message: `🔄 Iteration ${iteration}: ${products.length}/${config.targetProducts} products found (${totalActorRuns} searches)`,
+      });
+
+      // Run multiple searches per actor in this iteration
+      const batchSize = Math.min(config.batchSize, config.targetProducts - products.length);
+      
+      // TikTok searches
+      if (this.candidateGenerator.hasMoreCandidates(candidates.tiktok)) {
+        const tiktokBatch = this.candidateGenerator.getNextCandidates(candidates.tiktok, batchSize);
+        for (const candidate of tiktokBatch) {
+          if (totalActorRuns >= config.maxActorRuns) break;
+          const newProducts = await this.searchTikTok(run, candidate);
+          this.addProducts(products, newProducts, seenUrls, seenNames, run);
+          totalActorRuns++;
+          run.searchStats.tiktokSearches++;
+          
+          if (products.length >= config.targetProducts) break;
+        }
+      }
+
+      // Google Trends searches
+      if (products.length < config.targetProducts && this.candidateGenerator.hasMoreCandidates(candidates.googleTrends)) {
+        const trendsBatch = this.candidateGenerator.getNextCandidates(candidates.googleTrends, batchSize);
+        for (const candidate of trendsBatch) {
+          if (totalActorRuns >= config.maxActorRuns) break;
+          const newProducts = await this.searchGoogleTrends(run, candidate);
+          this.addProducts(products, newProducts, seenUrls, seenNames, run);
+          totalActorRuns++;
+          run.searchStats.googleTrendsSearches++;
+          
+          if (products.length >= config.targetProducts) break;
+        }
+      }
+
+      // Reddit searches
+      if (products.length < config.targetProducts && this.candidateGenerator.hasMoreCandidates(candidates.reddit)) {
+        const redditBatch = this.candidateGenerator.getNextCandidates(candidates.reddit, batchSize);
+        for (const candidate of redditBatch) {
+          if (totalActorRuns >= config.maxActorRuns) break;
+          const newProducts = await this.searchReddit(run, candidate, context.onboardingData);
+          this.addProducts(products, newProducts, seenUrls, seenNames, run);
+          totalActorRuns++;
+          run.searchStats.redditSearches++;
+          
+          if (products.length >= config.targetProducts) break;
+        }
+      }
+
+      // Amazon searches
+      if (products.length < config.targetProducts && this.candidateGenerator.hasMoreCandidates(candidates.amazon)) {
+        const amazonBatch = this.candidateGenerator.getNextCandidates(candidates.amazon, batchSize);
+        for (const candidate of amazonBatch) {
+          if (totalActorRuns >= config.maxActorRuns) break;
+          const newProducts = await this.searchAmazon(run, candidate);
+          this.addProducts(products, newProducts, seenUrls, seenNames, run);
+          totalActorRuns++;
+          run.searchStats.amazonSearches++;
+          
+          if (products.length >= config.targetProducts) break;
+        }
+      }
+
+      // Progress update
+      this.emitActivity(run.id, {
+        type: 'info',
+        timestamp: new Date().toISOString(),
+        message: `📊 Progress: ${products.length}/${config.targetProducts} products (${run.searchStats.duplicateCount} duplicates, ${run.searchStats.rejectedCount} rejected)`,
+        details: {
+          productsFound: products.length,
+          target: config.targetProducts,
+          searchesCompleted: totalActorRuns,
+          bySource: {
+            tiktok: run.searchStats.productsFromTikTok,
+            googleTrends: run.searchStats.productsFromGoogleTrends,
+            reddit: run.searchStats.productsFromReddit,
+            amazon: run.searchStats.productsFromAmazon
+          }
+        }
+      });
+
+      // If no new products found this iteration, generate more candidates
+      if (!this.hasMoreCandidates(candidates) && products.length < config.targetProducts) {
+        this.emitActivity(run.id, {
+          type: 'warning',
+          timestamp: new Date().toISOString(),
+          message: '⚠️ Search candidates exhausted, generating more...',
+        });
+        
+        // Expand search with broader terms
+        this.expandSearchCandidates(candidates, category, subcategory);
+      }
+    }
+
+    // Update final stats
+    run.searchStats.totalSearches = totalActorRuns;
+    
+    // Complete research
+    await this.completeResearch(run, products);
+  }
+
+  /**
+   * Check if any actor has more candidates
+   */
+  private hasMoreCandidates(candidates: {
+    tiktok: SearchCandidate[];
+    googleTrends: SearchCandidate[];
+    reddit: SearchCandidate[];
+    amazon: SearchCandidate[];
+  }): boolean {
+    return this.candidateGenerator.hasMoreCandidates(candidates.tiktok) ||
+           this.candidateGenerator.hasMoreCandidates(candidates.googleTrends) ||
+           this.candidateGenerator.hasMoreCandidates(candidates.reddit) ||
+           this.candidateGenerator.hasMoreCandidates(candidates.amazon);
+  }
+
+  /**
+   * Add products to collection with deduplication
+   */
+  private addProducts(
+    products: Product[], 
+    newProducts: Product[], 
+    seenUrls: Set<string>, 
+    seenNames: Set<string>,
+    run: ResearchRun
+  ): void {
+    for (const product of newProducts) {
+      // Deduplicate by URL or normalized name
+      const urlKey = product.sourceUrl ? this.normalizeUrl(product.sourceUrl) : null;
+      const nameKey = this.normalizeName(product.name);
+      
+      if (urlKey && seenUrls.has(urlKey)) {
+        run.searchStats.duplicateCount++;
+        continue;
+      }
+      
+      if (seenNames.has(nameKey)) {
+        run.searchStats.duplicateCount++;
+        continue;
+      }
+      
+      // Add to collection
+      products.push(product);
+      if (urlKey) seenUrls.add(urlKey);
+      seenNames.add(nameKey);
+      
+      // Update source stats
+      switch (product.source) {
+        case 'tiktok': run.searchStats.productsFromTikTok++; break;
+        case 'google_trends': run.searchStats.productsFromGoogleTrends++; break;
+        case 'reddit': run.searchStats.productsFromReddit++; break;
+        case 'amazon': run.searchStats.productsFromAmazon++; break;
+      }
+      
+      run.productsFound++;
+      
+      this.emitActivity(run.id, {
+        type: 'product_found',
+        timestamp: new Date().toISOString(),
+        message: `🛍️ Found: ${product.name.substring(0, 50)}...`,
+        details: {
+          source: product.source,
+          searchTerm: product.searchTerm,
+          totalProducts: products.length
+        }
+      });
+    }
+  }
+
+  /**
+   * Search TikTok with a specific hashtag
+   */
+  private async searchTikTok(run: ResearchRun, candidate: SearchCandidate): Promise<Product[]> {
+    const products: Product[] = [];
+    
+    this.emitActivity(run.id, {
+      type: 'actor_start',
+      timestamp: new Date().toISOString(),
+      message: `[TikTok] Searching: #${candidate.term}`,
+      details: { hashtag: candidate.term }
+    });
+
+    try {
+      const input = {
+        hashtags: [candidate.term],
+        resultsPerPage: 30,
+        maxResults: 50,
+        shouldDownloadVideos: false,
+        videoLimit: 0,
+      };
+
+      const actorRun = await apifyService.runActor(SHOPPDROPP_ACTORS.tiktok, input, {
+        waitForFinish: true,
+        waitSecs: 120,
+      });
+
+      const results = await apifyService.getDatasetItems(actorRun.defaultDatasetId, { limit: 100 });
+      
+      this.emitActivity(run.id, {
+        type: 'actor_complete',
+        timestamp: new Date().toISOString(),
+        message: `[TikTok] #${candidate.term}: ${results.length} results`,
+        details: { hashtag: candidate.term, count: results.length }
+      });
+
+      // Extract products from TikTok videos
+      for (const video of results) {
+        if (video.title || video.desc) {
+          const productName = this.extractProductNameFromText(video.title || video.desc || '');
+          if (productName && productName.length > 3) {
+            products.push({
+              id: uuidv4(),
+              name: productName,
+              source: 'tiktok',
+              sourceUrl: video.webVideoUrl || video.url,
+              category: candidate.category,
+              searchTerm: candidate.term,
+              imageUrl: video.videoCover,
+              relevanceScore: video.heartCount ? Math.min(video.heartCount / 1000, 10) : 5,
+              timestamp: new Date().toISOString(),
+              raw: video
+            });
+          }
+        }
+      }
+    } catch (error: any) {
+      this.emitActivity(run.id, {
+        type: 'error',
+        timestamp: new Date().toISOString(),
+        message: `[TikTok] #${candidate.term} failed: ${error.message}`,
+      });
+    }
+
+    return products;
+  }
+
+  /**
+   * Search Google Trends with a specific keyword
+   */
+  private async searchGoogleTrends(run: ResearchRun, candidate: SearchCandidate): Promise<Product[]> {
+    const products: Product[] = [];
+    
+    this.emitActivity(run.id, {
+      type: 'actor_start',
+      timestamp: new Date().toISOString(),
+      message: `[Trends] Searching: "${candidate.term}"`,
+      details: { keyword: candidate.term }
+    });
+
+    try {
+      const input = {
+        searchTerms: [candidate.term],
+        timeRange: '3mo',
+        geo: 'US',
+      };
+
+      const actorRun = await apifyService.runActor(SHOPPDROPP_ACTORS.google_trends, input, {
+        waitForFinish: true,
+        waitSecs: 60,
+      });
+
+      const results = await apifyService.getDatasetItems(actorRun.defaultDatasetId, { limit: 50 });
+      
+      this.emitActivity(run.id, {
+        type: 'actor_complete',
+        timestamp: new Date().toISOString(),
+        message: `[Trends] "${candidate.term}": ${results.length} results`,
+        details: { keyword: candidate.term, count: results.length }
+      });
+
+      // Trends data provides keywords, not products directly
+      // Use for signal detection and keyword expansion
+      for (const trend of results) {
+        if (trend.keyword) {
+          // Mark as potential product keyword for next iterations
+          this.candidateGenerator.markUsed(candidate.term);
+        }
+      }
+    } catch (error: any) {
+      this.emitActivity(run.id, {
+        type: 'error',
+        timestamp: new Date().toISOString(),
+        message: `[Trends] "${candidate.term}" failed: ${error.message}`,
+      });
+    }
+
+    return products;
+  }
+
+  /**
+   * Search Reddit with a specific subreddit
+   */
+  private async searchReddit(run: ResearchRun, candidate: SearchCandidate, onboardingData: any): Promise<Product[]> {
+    const products: Product[] = [];
+    
+    this.emitActivity(run.id, {
+      type: 'actor_start',
+      timestamp: new Date().toISOString(),
+      message: `[Reddit] Searching r/${candidate.term}`,
+      details: { subreddit: candidate.term }
+    });
+
+    try {
+      // Search for product mentions
+      const searchTerms = [
+        onboardingData.category,
+        'product',
+        'recommendation',
+        'best',
+        'buy'
+      ];
+
+      const input = {
+        subreddits: [candidate.term],
+        searchQueries: searchTerms,
+        sort: 'hot',
+        time: 'month',
+        maxPosts: 30,
+        maxComments: 5,
+        includeComments: true,
+      };
+
+      const actorRun = await apifyService.runActor(SHOPPDROPP_ACTORS.reddit, input, {
+        waitForFinish: true,
+        waitSecs: 120,
+      });
+
+      const results = await apifyService.getDatasetItems(actorRun.defaultDatasetId, { limit: 100 });
+      
+      this.emitActivity(run.id, {
+        type: 'actor_complete',
+        timestamp: new Date().toISOString(),
+        message: `[Reddit] r/${candidate.term}: ${results.length} posts`,
+        details: { subreddit: candidate.term, count: results.length }
+      });
+
+      // Extract products from posts
+      for (const post of results) {
+        const text = `${post.title || ''} ${post.body || ''}`;
+        const productName = this.extractProductNameFromText(text);
+        
+        if (productName && productName.length > 5) {
+          products.push({
+            id: uuidv4(),
+            name: productName,
+            source: 'reddit',
+            sourceUrl: post.url,
+            category: candidate.category,
+            searchTerm: `${candidate.term}: ${post.title?.substring(0, 30)}`,
+            relevanceScore: post.score ? Math.min(post.score / 100, 10) : 5,
+            timestamp: new Date().toISOString(),
+            raw: post
+          });
+        }
+      }
+    } catch (error: any) {
+      this.emitActivity(run.id, {
+        type: 'error',
+        timestamp: new Date().toISOString(),
+        message: `[Reddit] r/${candidate.term} failed: ${error.message}`,
+      });
+    }
+
+    return products;
+  }
+
+  /**
+   * Search Amazon with a specific URL
+   */
+  private async searchAmazon(run: ResearchRun, candidate: SearchCandidate): Promise<Product[]> {
+    const products: Product[] = [];
+    
+    this.emitActivity(run.id, {
+      type: 'actor_start',
+      timestamp: new Date().toISOString(),
+      message: `[Amazon] Searching: ${candidate.term.substring(0, 60)}...`,
+      details: { url: candidate.term }
+    });
+
+    try {
+      const input = {
+        startUrls: [candidate.term],
+        maxResults: 50,
+        useProxy: true,
+        proxyConfig: {
+          useApifyProxy: true,
+        },
+      };
+
+      const actorRun = await apifyService.runActor(SHOPPDROPP_ACTORS.amazon, input, {
+        waitForFinish: true,
+        waitSecs: 180,
+      });
+
+      const results = await apifyService.getDatasetItems(actorRun.defaultDatasetId, { limit: 100 });
+      
+      this.emitActivity(run.id, {
+        type: 'actor_complete',
+        timestamp: new Date().toISOString(),
+        message: `[Amazon] Found ${results.length} products`,
+        details: { url: candidate.term, count: results.length }
+      });
+
+      // Extract products from Amazon results
+      for (const item of results) {
+        if (item.title) {
+          products.push({
+            id: uuidv4(),
+            name: item.title,
+            source: 'amazon',
+            sourceUrl: item.url || item.detailPageUrl,
+            category: candidate.category,
+            searchTerm: candidate.term,
+            imageUrl: item.image,
+            price: item.price ? parseFloat(item.price.replace(/[^0-9.]/g, '')) : undefined,
+            rating: item.rating,
+            reviewCount: item.reviewCount,
+            relevanceScore: item.rating ? item.rating : 5,
+            timestamp: new Date().toISOString(),
+            raw: item
+          });
+        }
+      }
+    } catch (error: any) {
+      this.emitActivity(run.id, {
+        type: 'error',
+        timestamp: new Date().toISOString(),
+        message: `[Amazon] Search failed: ${error.message}`,
+      });
+    }
+
+    return products;
+  }
+
+  /**
+   * Expand search candidates when initial set is exhausted
+   */
+  private expandSearchCandidates(
+    candidates: any,
+    category: string,
+    subcategory: string
+  ): void {
+    // Generate broader terms
+    const broaderTerms = [
+      `${category} accessories`,
+      `${category} products`,
+      `${category} must have`,
+      `${category} finds`,
+      `best ${category}`,
+      `viral ${category}`,
+      `amazon ${category}`,
+      `tiktok ${category}`
+    ];
+    
+    // Add to existing candidates
+    broaderTerms.forEach(term => {
+      const sanitized = term.toLowerCase().replace(/[^a-z0-9]/g, '');
+      candidates.tiktok.push({
+        term: sanitized,
+        type: 'hashtag',
+        priority: 5,
+        category
+      });
+      
+      candidates.amazon.push({
+        term: `https://www.amazon.com/s?k=${encodeURIComponent(term)}&ref=nb_sb_noss`,
+        type: 'url',
+        priority: 5,
+        category
+      });
+    });
+  }
+
+  /**
+   * Extract product name from text
+   */
+  private extractProductNameFromText(text: string): string | null {
+    // Look for patterns like "product name" or product mentions
+    const cleaned = text
+      .replace(/[#@]/g, '')
+      .replace(/\b(https?:\/\/\S+)/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    
+    // Extract first sentence or phrase that looks like a product
+    const sentences = cleaned.split(/[.!?]+/);
+    for (const sentence of sentences) {
+      const trimmed = sentence.trim();
+      // Look for product-like phrases (nouns with descriptors)
+      if (trimmed.length > 10 && trimmed.length < 100) {
+        return trimmed;
+      }
+    }
+    
+    return null;
+  }
+
+  /**
+   * Normalize URL for deduplication
+   */
+  private normalizeUrl(url: string): string {
+    try {
+      const urlObj = new URL(url);
+      // Remove tracking parameters
+      urlObj.searchParams.delete('utm_source');
+      urlObj.searchParams.delete('utm_medium');
+      urlObj.searchParams.delete('utm_campaign');
+      urlObj.searchParams.delete('ref');
+      return urlObj.toString().toLowerCase();
+    } catch {
+      return url.toLowerCase();
+    }
+  }
+
+  /**
+   * Normalize product name for deduplication
+   */
+  private normalizeName(name: string): string {
+    return name
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, '')
+      .slice(0, 50);
+  }
+
+  /**
+   * Complete research and save results
+   */
+  private async completeResearch(run: ResearchRun, products: Product[]): Promise<void> {
+    run.status = products.length >= run.config.targetProducts ? 'completed' : 'exhausted';
+    run.endTime = new Date().toISOString();
+    run.results = products;
+    run.productsFound = products.length;
+
+    // Run CJ verification
+    const verifiedProducts = await this.verifyOnCJ(run, products);
+    run.productsVerified = verifiedProducts.length;
+    run.results = verifiedProducts;
+
+    this.emitActivity(run.id, {
+      type: run.status === 'completed' ? 'success' : 'warning',
+      timestamp: new Date().toISOString(),
+      message: run.status === 'completed' 
+        ? `🎉 Research complete! Found ${verifiedProducts.length}/${run.config.targetProducts} verified products`
+        : `⚠️ Research exhausted. Found ${verifiedProducts.length}/${run.config.targetProducts} products`,
+      details: {
+        productsFound: verifiedProducts.length,
+        target: run.config.targetProducts,
+        searches: run.searchStats.totalSearches,
+        bySource: {
+          tiktok: run.searchStats.productsFromTikTok,
+          googleTrends: run.searchStats.productsFromGoogleTrends,
+          reddit: run.searchStats.productsFromReddit,
+          amazon: run.searchStats.productsFromAmazon
+        },
+        duplicates: run.searchStats.duplicateCount,
+        rejected: run.searchStats.rejectedCount
+      }
+    });
+
+    this.emit('complete', run);
+  }
+
+  /**
+   * Verify products on CJ Dropshipping
+   */
+  private async verifyOnCJ(run: ResearchRun, products: Product[]): Promise<Product[]> {
+    this.emitActivity(run.id, {
+      type: 'info',
+      timestamp: new Date().toISOString(),
+      message: `🔄 Verifying ${products.length} products on CJ Dropshipping...`,
+    });
+
+    const verified: Product[] = [];
+    const targetCount = Math.min(products.length, run.config.targetProducts);
+
+    for (let i = 0; i < products.length && verified.length < targetCount; i++) {
+      const product = products[i];
+      const searchTerm = product.name.substring(0, 50);
+      
+      try {
+        const cjProducts = await cjDropshippingService.searchProducts(searchTerm, { pageSize: 5 });
+        
+        if (cjProducts.length > 0) {
+          const bestMatch = cjProducts[0];
+          verified.push({
+            ...product,
+            cjData: {
+              available: true,
+              productId: bestMatch.pid,
+              price: bestMatch.variants?.[0]?.variationPrice,
+              warehouse: 'CJ Dropshipping',
+            }
+          });
+        }
+      } catch (error) {
+        // Continue with next product
+      }
+    }
+
+    this.emitActivity(run.id, {
+      type: 'success',
+      timestamp: new Date().toISOString(),
+      message: `✅ Verified ${verified.length} products on CJ Dropshipping`,
+    });
+
+    return verified;
+  }
+
+  /**
+   * Fail a research run
+   */
+  private failRun(runId: string, errorMessage: string): void {
+    const run = this.activeRuns.get(runId);
+    if (run) {
+      run.status = 'failed';
+      run.endTime = new Date().toISOString();
+      
+      this.emitActivity(runId, {
+        type: 'error',
+        timestamp: new Date().toISOString(),
+        message: `❌ Research failed: ${errorMessage}`,
+      });
+
+      this.emit('error', { runId, error: errorMessage });
+    }
+  }
+
+  /**
+   * Emit activity event
+   */
+  private emitActivity(runId: string, activity: StreamingActivity): void {
+    const run = this.activeRuns.get(runId);
+    if (run) {
+      run.activities.push(activity);
+      this.emit('activity', { runId, activity });
+    }
+  }
+
+  /**
+   * Get research run
+   */
+  getRun(runId: string): ResearchRun | undefined {
+    return this.activeRuns.get(runId);
+  }
+
+  /**
+   * Get activities for a run
+   */
+  getActivities(runId: string): StreamingActivity[] {
+    return this.activeRuns.get(runId)?.activities || [];
+  }
+}
+
+export const adaptiveResearchPipeline = new AdaptiveResearchPipeline();
