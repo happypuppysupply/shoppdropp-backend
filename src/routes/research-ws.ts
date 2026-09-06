@@ -106,7 +106,7 @@ function handleClientMessage(client: ResearchWSClient, clientId: string, message
       
     case 'start_research':
       // Start a new research run
-      handleStartResearch(client, message.context);
+      handleStartResearch(client, message.context, message.force === true);
       break;
       
     case 'get_activities':
@@ -157,7 +157,7 @@ async function subscribeToRun(client: ResearchWSClient, runId: string) {
   }
 }
 
-async function handleStartResearch(client: ResearchWSClient, context: any) {
+async function handleStartResearch(client: ResearchWSClient, context: any, force: boolean = false) {
   try {
     const researchContext = {
       userId: client.userId,
@@ -165,7 +165,7 @@ async function handleStartResearch(client: ResearchWSClient, context: any) {
       onboardingData: context,
     };
     
-    const runId = await researchPipeline.startResearch(researchContext);
+    const runId = await researchPipeline.startResearch(researchContext, force);
     
     // Subscribe client to new run
     subscribeToRun(client, runId);

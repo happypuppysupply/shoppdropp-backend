@@ -67,7 +67,7 @@ export class ResearchPipeline extends EventEmitter {
   /**
    * Start a new research run for a user
    */
-  async startResearch(context: ResearchContext): Promise<string> {
+  async startResearch(context: ResearchContext, force: boolean = false): Promise<string> {
     const runId = uuidv4();
     const { onboardingData } = context;
     
@@ -90,10 +90,17 @@ export class ResearchPipeline extends EventEmitter {
 
     this.activeRuns.set(runId, run);
     
-    // Check cache first!
-    const cachedResult = await this.checkCache(cacheKey, run);
-    
-    if (cachedResult) {
+    // Check cache first (unless force refresh requested)
+    if (!force) {
+      const cachedResult = await this.checkCache(cacheKey, run);
+      
+      if (cachedResult) {
+        // Don't serve cache if it has 0 products (indicates a failed/partial run)
+        if (!cachedResult.products_count || cachedResult.products_count === 0) {
+          console.log(`[Research] Cache hit for ${cacheKey} but has 0 products - running fresh research`);
+          // Delete the stale empty cache entry
+          await supabase.from('research_cache').delete().eq('cache_key', cacheKey);
+        } else {
       // Serve from cache - no Apify costs!
       run.status = 'cached';
       run.cacheKey = cacheKey;
@@ -116,13 +123,27 @@ export class ResearchPipeline extends EventEmitter {
         message: `✨ Research complete using cached data. Saved $${cachedResult.estimated_savings.toFixed(2)}!`,
       });
       
-      this.emit('complete', run);
-      return runId;
+        this.emit('complete', run);
+        return runId;
+      }
+      }
     }
     
     // No cache hit - run actual research
     run.cacheKey = cacheKey;
     run.cacheHit = false;
+    
+    // Validate Apify token before starting pipeline
+    if (!process.env.APIFY_TOKEN) {
+      console.error('[Research] APIFY_TOKEN environment variable is not set');
+      this.emitActivity(run.id, {
+        type: 'error',
+        timestamp: new Date().toISOString(),
+        message: '❌ Research cannot start: Apify API token is not configured. Please set APIFY_TOKEN in your environment variables.',
+      });
+      this.failRun(runId, 'Apify API token not configured');
+      return runId;
+    }
     
     // Start research pipeline in background
     this.executePipeline(run).catch(err => {
@@ -749,6 +770,12 @@ export class ResearchPipeline extends EventEmitter {
    */
   private async cacheResults(run: ResearchRun, data: any): Promise<void> {
     if (!run.cacheKey || run.cacheHit) return;
+    
+    // Don't cache empty results (prevents cache poisoning from failed runs)
+    if (!data.products || data.products.length === 0) {
+      console.log(`[Research] Skipping cache for ${run.cacheKey} - no products found`);
+      return;
+    }
 
     try {
       const { category, subcategory, productCount, priceRange, targetAudience } = run.context.onboardingData;
