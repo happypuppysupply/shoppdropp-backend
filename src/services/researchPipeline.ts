@@ -172,6 +172,11 @@ export class ResearchPipeline extends EventEmitter {
    * Main pipeline execution
    */
   private async executePipeline(run: ResearchRun) {
+    console.log(`[Research] === EXECUTE PIPELINE START ===`);
+    console.log(`[Research] Run ID: ${run.id}`);
+    console.log(`[Research] APIFY_TOKEN exists: ${!!process.env.APIFY_TOKEN}`);
+    console.log(`[Research] APIFY_TOKEN length: ${process.env.APIFY_TOKEN?.length || 0}`);
+    
     const { context } = run;
     const { productCount } = context.onboardingData;
 
@@ -193,6 +198,7 @@ export class ResearchPipeline extends EventEmitter {
     });
 
     // Phase 1: Social Media Discovery
+    console.log(`[Research] Starting Phase 1: TikTok`);
     let accumulatedData = await this.runPhase(run, {
       id: 'social_discovery',
       name: 'Social Media Discovery',
@@ -201,6 +207,7 @@ export class ResearchPipeline extends EventEmitter {
       inputGenerator: (ctx) => this.generateTikTokInput(ctx),
       dataProcessor: (results, data) => this.processTikTokResults(results, data),
     });
+    console.log(`[Research] Phase 1 complete. Products so far: ${accumulatedData.products?.length || 0}`);
 
     // Phase 2: Google Trends (Search Demand Validation)
     accumulatedData = await this.runPhase(run, {
