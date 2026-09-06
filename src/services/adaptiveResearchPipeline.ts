@@ -854,6 +854,9 @@ export class AdaptiveResearchPipeline extends EventEmitter {
     const run = this.activeRuns.get(runId);
     if (run) {
       run.activities.push(activity);
+      // Console log for Render debugging
+      console.log(`[Research-Activity] ${activity.type}: ${activity.message}`);
+      // Emit to WebSocket listeners
       this.emit('activity', { runId, activity });
     }
   }
