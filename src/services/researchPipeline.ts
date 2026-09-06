@@ -825,8 +825,12 @@ export class ResearchPipeline extends EventEmitter {
   private generateTikTokInput(context: ResearchContext): any {
     const { category, subcategory } = context.onboardingData;
     
+    // Coerce arrays to strings
+    const catStr = String(Array.isArray(category) ? category[0] : category || "trending");
+    const subStr = String(Array.isArray(subcategory) ? subcategory[0] : subcategory || "products");
+    
     // Generate relevant hashtags
-    const hashtags = this.generateHashtags(category, subcategory);
+    const hashtags = this.generateHashtags(catStr, subStr);
     
     return {
       hashtags,
@@ -838,13 +842,21 @@ export class ResearchPipeline extends EventEmitter {
   }
 
   private generateGoogleTrendsInput(context: ResearchContext, data: any): any {
+    const { category, subcategory } = context.onboardingData;
+    
     // Extract specific product keywords from TikTok results
     const productKeywords = this.extractProductKeywordsFromTikTok(data.products);
     
-    // Add "buy" intent to each keyword
-    const searchTerms = productKeywords.map(kw => `buy ${kw}`).slice(0, 10);
-    
-    // Activity will be emitted by the runPhase method
+    // Fallback to category/subcategory keywords if no TikTok products
+    let searchTerms: string[];
+    if (productKeywords.length > 0) {
+      searchTerms = productKeywords.map(kw => `buy ${kw}`).slice(0, 10);
+    } else {
+      // Fallback: use category + subcategory
+      const catStr = String(Array.isArray(category) ? category[0] : category || "products");
+      const subStr = String(Array.isArray(subcategory) ? subcategory[0] : subcategory || "");
+      searchTerms = [catStr, subStr, `${catStr} ${subStr}`].filter(s => s.length > 2).slice(0, 5);
+    }
     
     return {
       searchTerms,
@@ -964,8 +976,19 @@ export class ResearchPipeline extends EventEmitter {
   private generateAmazonInput(context: ResearchContext, data: any): any {
     const { category, subcategory, priceRange } = context.onboardingData;
     
-    // Generate search queries from TikTok/Reddit findings
-    const searchTerms = data.keywords || [subcategory, category];
+    // Coerce to strings and flatten
+    const catStr = String(Array.isArray(category) ? category[0] : category || "");
+    const subStr = String(Array.isArray(subcategory) ? subcategory[0] : subcategory || "");
+    
+    // Generate search queries from TikTok/Reddit findings or use category
+    let searchTerms: string[] = [];
+    if (data.keywords && data.keywords.length > 0) {
+      searchTerms = data.keywords.map((k: any) => String(k)).filter((k: string) => k.length > 0);
+    }
+    // Fallback to category terms
+    if (searchTerms.length === 0) {
+      searchTerms = [catStr, subStr, `${catStr} ${subStr}`].filter(s => s.length > 2);
+    }
     
     return {
       searchTerms: searchTerms.slice(0, 5),
@@ -1133,9 +1156,12 @@ export class ResearchPipeline extends EventEmitter {
 
   // Helper Methods
 
-  private generateHashtags(category: string, subcategory: string): string[] {
-    const normalizedSubcat = subcategory.toLowerCase().replace(/\s+/g, '');
-    const normalizedCat = category.toLowerCase().replace(/\s+/g, '');
+  private generateHashtags(category: any, subcategory: any): string[] {
+    // Coerce arrays/objects to string, extract first part before emojis/dashes
+    const catStr = String(Array.isArray(category) ? category[0] : category || "").toLowerCase();
+    const subStr = String(Array.isArray(subcategory) ? subcategory[0] : subcategory || "").toLowerCase();
+    const normalizedCat = catStr.split(/[-–—]/)[0].replace(/\s+/g, '');
+    const normalizedSubcat = subStr.split(/[-–—]/)[0].replace(/\s+/g, '');
     
     // Industry-specific TikTokMadeMeBuyIt hashtags
     const categorizedTMM = [
