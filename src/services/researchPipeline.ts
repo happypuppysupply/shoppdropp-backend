@@ -856,10 +856,12 @@ export class ResearchPipeline extends EventEmitter {
     if (productKeywords.length > 0) {
       searchTerms = productKeywords.map(kw => `buy ${kw}`).slice(0, 10);
     } else {
-      // Fallback: use clean category + subcategory
-      searchTerms = [cleanCategory, cleanSubcategory, `${cleanCategory} ${cleanSubcategory}`]
-        .filter(s => s.length > 2)
-        .slice(0, 5);
+      // Fallback: use clean category + subcategory - deduped
+      const terms = [cleanCategory, cleanSubcategory];
+      if (cleanCategory !== cleanSubcategory) {
+        terms.push(`${cleanCategory} ${cleanSubcategory}`);
+      }
+      searchTerms = [...new Set(terms)].filter(s => s.length > 2).slice(0, 5);
     }
     
     return {
@@ -984,23 +986,32 @@ export class ResearchPipeline extends EventEmitter {
     const cleanCategory = this.cleanSearchTerm(category);
     const cleanSubcategory = this.cleanSearchTerm(subcategory);
     
-    // Generate search queries from TikTok/Reddit findings or use category
-    let searchTerms: string[] = [];
+    // Build search keywords
+    let keywords: string[] = [];
     if (data.keywords && data.keywords.length > 0) {
-      searchTerms = data.keywords.map((k: any) => this.cleanSearchTerm(k)).filter((k: string) => k.length > 0);
+      keywords = data.keywords.map((k: any) => this.cleanSearchTerm(k)).filter((k: string) => k.length > 0);
     }
     // Fallback to clean category terms
-    if (searchTerms.length === 0) {
-      searchTerms = [cleanCategory, cleanSubcategory, `${cleanCategory} ${cleanSubcategory}`]
-        .filter(s => s.length > 2);
+    if (keywords.length === 0) {
+      keywords = [cleanCategory, cleanSubcategory].filter(s => s.length > 2);
+    }
+    
+    // Amazon crawler expects URLs or search queries with domain
+    // Build Amazon search URLs for each keyword
+    const startUrls = keywords.slice(0, 3).map(kw => 
+      `https://www.amazon.com/s?k=${encodeURIComponent(kw)}&ref=nb_sb_noss`
+    );
+    
+    // If no keywords, use category browse URLs
+    if (startUrls.length === 0) {
+      startUrls.push(`https://www.amazon.com/s?k=${encodeURIComponent(cleanCategory)}`);
     }
     
     return {
-      searchTerms: searchTerms.slice(0, 5),
+      startUrls: startUrls,
       maxResults: 50,
-      productsFound: 0,
-      reviewsCount: 1,
-      proxy: {
+      useProxy: true,
+      proxyConfig: {
         useApifyProxy: true,
       },
     };
