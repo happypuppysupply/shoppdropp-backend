@@ -432,6 +432,7 @@ export class ResearchPipeline extends EventEmitter {
    * Run a single research phase
    */
   private async runPhase(run: ResearchRun, phase: ResearchPhase, accumulatedData: any = {}): Promise<any> {
+    console.log(`[Research] 🚀 Starting phase: ${phase.name} (actor: ${phase.actorId})`);
     this.emitActivity(run.id, {
       type: 'actor_start',
       timestamp: new Date().toISOString(),
@@ -442,17 +443,22 @@ export class ResearchPipeline extends EventEmitter {
     try {
       // Generate input for this actor
       const input = phase.inputGenerator(run.context, accumulatedData);
+      console.log(`[Research] 📤 ${phase.name} input:`, JSON.stringify(input).substring(0, 500));
       
       // Run the actor
+      console.log(`[Research] ⏳ Calling Apify actor ${phase.actorId}...`);
       const actorRun = await apifyService.runActor(phase.actorId, input, {
         waitForFinish: true,
         waitSecs: 300, // 5 minutes max per phase
       });
+      console.log(`[Research] ✅ Actor ${phase.actorId} finished with status: ${actorRun.status}`);
 
       // Get results from dataset
+      console.log(`[Research] 📥 Fetching dataset ${actorRun.defaultDatasetId}...`);
       const results = await apifyService.getDatasetItems(actorRun.defaultDatasetId, {
         limit: 1000,
       });
+      console.log(`[Research] 📊 ${phase.name} returned ${results.length} items from dataset`);
 
       // Update cost
       run.totalCost += this.estimatePhaseCost(phase.id);
@@ -469,9 +475,13 @@ export class ResearchPipeline extends EventEmitter {
       });
 
       // Process results
-      return phase.dataProcessor(results, accumulatedData);
+      const processed = phase.dataProcessor(results, accumulatedData);
+      console.log(`[Research] 🔧 ${phase.name} processed results:`, JSON.stringify(processed).substring(0, 500));
+      return processed;
 
     } catch (error: any) {
+      console.error(`[Research] ❌ ${phase.name} FAILED:`, error.message);
+      console.error(`[Research] ❌ Stack:`, error.stack);
       this.emitActivity(run.id, {
         type: 'error',
         timestamp: new Date().toISOString(),
@@ -633,6 +643,8 @@ export class ResearchPipeline extends EventEmitter {
    * Complete research and save results
    */
   private async completeResearch(run: ResearchRun, finalData: any) {
+    console.log(`[Research] 🏁 completeResearch called for run ${run.id}`);
+    console.log(`[Research] 📊 finalData.products.length = ${finalData.products?.length || 0}`);
     run.status = 'completed';
     run.endTime = new Date().toISOString();
     run.productsFound = finalData.products.length + (finalData.unavailableProducts?.length || 0);
