@@ -825,12 +825,12 @@ export class ResearchPipeline extends EventEmitter {
   private generateTikTokInput(context: ResearchContext): any {
     const { category, subcategory } = context.onboardingData;
     
-    // Coerce arrays to strings
-    const catStr = String(Array.isArray(category) ? category[0] : category || "trending");
-    const subStr = String(Array.isArray(subcategory) ? subcategory[0] : subcategory || "products");
+    // Clean category/subcategory: extract first part, remove emojis, lowercase
+    const cleanCategory = this.cleanSearchTerm(category);
+    const cleanSubcategory = this.cleanSearchTerm(subcategory);
     
     // Generate relevant hashtags
-    const hashtags = this.generateHashtags(catStr, subStr);
+    const hashtags = this.generateHashtags(cleanCategory, cleanSubcategory);
     
     return {
       hashtags,
@@ -844,6 +844,10 @@ export class ResearchPipeline extends EventEmitter {
   private generateGoogleTrendsInput(context: ResearchContext, data: any): any {
     const { category, subcategory } = context.onboardingData;
     
+    // Clean category/subcategory
+    const cleanCategory = this.cleanSearchTerm(category);
+    const cleanSubcategory = this.cleanSearchTerm(subcategory);
+    
     // Extract specific product keywords from TikTok results
     const productKeywords = this.extractProductKeywordsFromTikTok(data.products);
     
@@ -852,10 +856,10 @@ export class ResearchPipeline extends EventEmitter {
     if (productKeywords.length > 0) {
       searchTerms = productKeywords.map(kw => `buy ${kw}`).slice(0, 10);
     } else {
-      // Fallback: use category + subcategory
-      const catStr = String(Array.isArray(category) ? category[0] : category || "products");
-      const subStr = String(Array.isArray(subcategory) ? subcategory[0] : subcategory || "");
-      searchTerms = [catStr, subStr, `${catStr} ${subStr}`].filter(s => s.length > 2).slice(0, 5);
+      // Fallback: use clean category + subcategory
+      searchTerms = [cleanCategory, cleanSubcategory, `${cleanCategory} ${cleanSubcategory}`]
+        .filter(s => s.length > 2)
+        .slice(0, 5);
     }
     
     return {
@@ -976,18 +980,19 @@ export class ResearchPipeline extends EventEmitter {
   private generateAmazonInput(context: ResearchContext, data: any): any {
     const { category, subcategory, priceRange } = context.onboardingData;
     
-    // Coerce to strings and flatten
-    const catStr = String(Array.isArray(category) ? category[0] : category || "");
-    const subStr = String(Array.isArray(subcategory) ? subcategory[0] : subcategory || "");
+    // Clean category/subcategory
+    const cleanCategory = this.cleanSearchTerm(category);
+    const cleanSubcategory = this.cleanSearchTerm(subcategory);
     
     // Generate search queries from TikTok/Reddit findings or use category
     let searchTerms: string[] = [];
     if (data.keywords && data.keywords.length > 0) {
-      searchTerms = data.keywords.map((k: any) => String(k)).filter((k: string) => k.length > 0);
+      searchTerms = data.keywords.map((k: any) => this.cleanSearchTerm(k)).filter((k: string) => k.length > 0);
     }
-    // Fallback to category terms
+    // Fallback to clean category terms
     if (searchTerms.length === 0) {
-      searchTerms = [catStr, subStr, `${catStr} ${subStr}`].filter(s => s.length > 2);
+      searchTerms = [cleanCategory, cleanSubcategory, `${cleanCategory} ${cleanSubcategory}`]
+        .filter(s => s.length > 2);
     }
     
     return {
@@ -999,6 +1004,26 @@ export class ResearchPipeline extends EventEmitter {
         useApifyProxy: true,
       },
     };
+  }
+
+  /**
+   * Clean search term: extract core words, remove emojis, strip descriptions
+   */
+  private cleanSearchTerm(input: any): string {
+    // Convert to string and get first element if array
+    let str = String(Array.isArray(input) ? input[0] : input || "");
+    
+    // Remove emojis (unicode ranges for common emojis)
+    str = str.replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '');
+    
+    // Remove everything after dash (descriptions like "- Food, toys...")
+    str = str.split(/[-–—]/)[0];
+    
+    // Trim and normalize whitespace
+    str = str.trim().replace(/\s+/g, ' ');
+    
+    // Lowercase
+    return str.toLowerCase();
   }
 
   private generateYouTubeInput(context: ResearchContext, data: any): any {
@@ -1157,11 +1182,13 @@ export class ResearchPipeline extends EventEmitter {
   // Helper Methods
 
   private generateHashtags(category: any, subcategory: any): string[] {
-    // Coerce arrays/objects to string, extract first part before emojis/dashes
-    const catStr = String(Array.isArray(category) ? category[0] : category || "").toLowerCase();
-    const subStr = String(Array.isArray(subcategory) ? subcategory[0] : subcategory || "").toLowerCase();
-    const normalizedCat = catStr.split(/[-–—]/)[0].replace(/\s+/g, '');
-    const normalizedSubcat = subStr.split(/[-–—]/)[0].replace(/\s+/g, '');
+    // Clean inputs using the helper
+    const cleanCat = this.cleanSearchTerm(category);
+    const cleanSub = this.cleanSearchTerm(subcategory);
+    
+    // Normalize for hashtag generation (remove spaces)
+    const normalizedCat = cleanCat.replace(/\s+/g, '');
+    const normalizedSubcat = cleanSub.replace(/\s+/g, '');
     
     // Industry-specific TikTokMadeMeBuyIt hashtags
     const categorizedTMM = [
