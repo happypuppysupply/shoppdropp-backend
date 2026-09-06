@@ -452,9 +452,9 @@ export class ResearchPipeline extends EventEmitter {
 
     } catch (error: any) {
       this.emitActivity(run.id, {
-        type: 'warning',
+        type: 'error',
         timestamp: new Date().toISOString(),
-        message: `⚠️ ${phase.name} encountered an issue: ${error.message}`,
+        message: `❌ ${phase.name} failed: ${error.message}`,
         details: { phaseId: phase.id, error: error.message }
       });
       return accumulatedData; // Continue with what we have
