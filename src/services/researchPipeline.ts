@@ -703,12 +703,12 @@ export class ResearchPipeline extends EventEmitter {
     
     // Normalize and create consistent key
     const normalized = [
-      category.trim().toLowerCase(),
-      subcategory.trim().toLowerCase(),
+      String(category || "").trim().toLowerCase(),
+      String(subcategory || "").trim().toLowerCase(),
       productCount.toString(),
       Math.round(priceRange.min / 5) * 5, // Round to nearest 5
       Math.round(priceRange.max / 5) * 5,
-      (targetAudience || '').trim().toLowerCase(),
+      String(targetAudience || '').trim().toLowerCase(),
     ].join('|');
     
     // Simple hash
