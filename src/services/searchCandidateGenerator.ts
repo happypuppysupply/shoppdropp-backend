@@ -485,8 +485,12 @@ export class SearchCandidateGenerator {
     return this.deduplicateCandidates(candidates).slice(0, 20);
   }
 
-  private cleanCategory(input: string): string {
-    return input
+  private cleanCategory(input: any): string {
+    // Handle arrays - take first element
+    let str = Array.isArray(input) ? input[0] : input;
+    // Convert to string
+    str = String(str || "");
+    return str
       .toLowerCase()
       .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '')
       .split(/[-–—]/)[0]

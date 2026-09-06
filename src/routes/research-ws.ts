@@ -112,7 +112,7 @@ function handleClientMessage(client: ResearchWSClient, clientId: string, message
     case 'get_activities':
       // Get all activities for a run
       if (message.runId) {
-        const activities = researchPipeline.getActivities(message.runId);
+        const activities = adaptiveResearchPipeline.getActivities(message.runId);
         client.ws.send(JSON.stringify({
           type: 'activities',
           runId: message.runId,
@@ -129,7 +129,7 @@ function handleClientMessage(client: ResearchWSClient, clientId: string, message
 async function subscribeToRun(client: ResearchWSClient, runId: string) {
   client.currentRunId = runId;
   
-  const run = researchPipeline.getRun(runId);
+  const run = adaptiveResearchPipeline.getRun(runId);
   
   if (!run) {
     client.ws.send(JSON.stringify({
@@ -246,7 +246,7 @@ export const researchRoutes = {
         });
       }
       
-      const runId = await researchPipeline.startResearch({
+      const runId = await adaptiveResearchPipeline.startResearch({
         userId,
         storeId,
         onboardingData,
@@ -270,7 +270,7 @@ export const researchRoutes = {
     try {
       const { runId } = req.params;
       
-      const run = researchPipeline.getRun(runId);
+      const run = adaptiveResearchPipeline.getRun(runId);
       
       if (!run) {
         return res.status(404).json({ error: 'Research run not found' });
@@ -302,7 +302,7 @@ export const researchRoutes = {
   async getActivities(req: any, res: any) {
     try {
       const { runId } = req.params;
-      const activities = researchPipeline.getActivities(runId);
+      const activities = adaptiveResearchPipeline.getActivities(runId);
       
       res.json({
         success: true,
