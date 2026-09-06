@@ -54,7 +54,6 @@ const wss = new WebSocketServer({ noServer: true });
 
 // SEPARATE WebSocketServer for research to completely isolate socket handling
 const researchWss = new WebSocketServer({ noServer: true });
-import { setupResearchWebSocket } from './routes/research-ws';
 setupResearchWebSocket(researchWss);
 
 const workerManager = new WorkerManager();
@@ -286,7 +285,8 @@ server.on('upgrade', async (request, socket, head) => {
       // This avoids 'handleUpgrade() was called more than once' error
       researchWss.handleUpgrade(request, socket, head, (ws) => {
         (ws as any).user = { id: userId };
-        // researchWss emits 'connection' which research-ws.ts handles
+        // MANUALLY emit 'connection' since noServer: true doesn't auto-emit
+        researchWss.emit('connection', ws, request);
       });
       
     } catch (error) {
