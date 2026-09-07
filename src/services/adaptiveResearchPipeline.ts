@@ -233,11 +233,12 @@ export class AdaptiveResearchPipeline extends EventEmitter {
     let iteration = 0;
 
     // Continue searching until target reached or budget exhausted
+    // Note: hasMoreCandidates is not a stopping condition because TikTok Shop
+    // generates fresh keywords each iteration via generateTikTokShopKeywords
     while (
       products.length < config.targetProducts &&
       totalActorRuns < config.maxActorRuns &&
-      iteration < config.maxIterations &&
-      this.hasMoreCandidates(candidates)
+      iteration < config.maxIterations
     ) {
       iteration++;
       
