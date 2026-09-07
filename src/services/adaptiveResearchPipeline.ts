@@ -19,7 +19,7 @@ interface ResearchContext {
 }
 
 interface StreamingActivity {
-  type: 'info' | 'success' | 'warning' | 'error' | 'actor_start' | 'actor_complete' | 'product_found' | 'search_exhausted';
+  type: 'info' | 'success' | 'warning' | 'error' | 'actor_start' | 'actor_complete' | 'product_found' | 'product_batch' | 'search_exhausted';
   timestamp: string;
   message: string;
   details?: any;
@@ -53,11 +53,13 @@ interface ResearchConfig {
 
 interface SearchStats {
   tiktokSearches: number;
+  tiktokShopSearches: number;
   googleTrendsSearches: number;
   redditSearches: number;
   amazonSearches: number;
   totalSearches: number;
   productsFromTikTok: number;
+  productsFromTikTokShop: number;
   productsFromGoogleTrends: number;
   productsFromReddit: number;
   productsFromAmazon: number;
@@ -68,18 +70,35 @@ interface SearchStats {
 interface Product {
   id: string;
   name: string;
+  description?: string;
   source: string;
   sourceUrl?: string;
   category: string;
   searchTerm: string;
   imageUrl?: string;
+  videoUrl?: string;
+  tiktokVideoUrl?: string;
   price?: number;
+  originalPrice?: number;
   rating?: number;
   reviewCount?: number;
   trendSignal?: string;
   relevanceScore: number;
   timestamp: string;
   raw: any;
+  cjData?: {
+    available: boolean;
+    productId?: string;
+    price?: number;
+    warehouse?: string;
+  };
+  tiktokShopData?: {
+    shopName?: string;
+    soldCount?: number;
+    gmv?: number;
+    commissionRate?: number;
+    productId?: string;
+  };
 }
 
 // Apify Actor IDs
@@ -88,6 +107,8 @@ const SHOPPDROPP_ACTORS = {
   reddit: 'oAuCIx3ItNrs2okjQ',
   google_trends: 'DyNQEYDj9awfGQf9A',
   amazon: 'BG3WDrGdteHgZgbPK',
+  tiktok_shop: 'C97SUiMlbZ75x6u22',  // unseenuser/TikTok-Shop-Scraper - products, reviews, GMV
+  tiktok_shop_creators: '7WXZyKLZvyOPbf5Ih',  // lemur/tiktok-shop-creators - creator performance
 };
 
 export class AdaptiveResearchPipeline extends EventEmitter {
@@ -131,11 +152,13 @@ export class AdaptiveResearchPipeline extends EventEmitter {
       productsVerified: 0,
       searchStats: {
         tiktokSearches: 0,
+        tiktokShopSearches: 0,
         googleTrendsSearches: 0,
         redditSearches: 0,
         amazonSearches: 0,
         totalSearches: 0,
         productsFromTikTok: 0,
+        productsFromTikTokShop: 0,
         productsFromGoogleTrends: 0,
         productsFromReddit: 0,
         productsFromAmazon: 0,
@@ -227,8 +250,22 @@ export class AdaptiveResearchPipeline extends EventEmitter {
       // Run multiple searches per actor in this iteration
       const batchSize = Math.min(config.batchSize, config.targetProducts - products.length);
       
-      // TikTok searches
-      if (this.candidateGenerator.hasMoreCandidates(candidates.tiktok)) {
+      // TIKTOK SHOP - PRIMARY SOURCE (search by keyword)
+      if (products.length < config.targetProducts) {
+        const tiktokShopKeywords = this.generateTikTokShopKeywords(category, subcategory, iteration);
+        for (const keyword of tiktokShopKeywords.slice(0, batchSize)) {
+          if (totalActorRuns >= config.maxActorRuns) break;
+          const newProducts = await this.searchTikTokShop(run, keyword, category);
+          this.addProducts(products, newProducts, seenUrls, seenNames, run);
+          totalActorRuns++;
+          run.searchStats.tiktokShopSearches++;
+          
+          if (products.length >= config.targetProducts) break;
+        }
+      }
+
+      // TikTok hashtag searches (for trending signal)
+      if (products.length < config.targetProducts && this.candidateGenerator.hasMoreCandidates(candidates.tiktok)) {
         const tiktokBatch = this.candidateGenerator.getNextCandidates(candidates.tiktok, batchSize);
         for (const candidate of tiktokBatch) {
           if (totalActorRuns >= config.maxActorRuns) break;
@@ -369,12 +406,40 @@ export class AdaptiveResearchPipeline extends EventEmitter {
       // Update source stats
       switch (product.source) {
         case 'tiktok': run.searchStats.productsFromTikTok++; break;
+        case 'tiktok_shop': run.searchStats.productsFromTikTokShop++; break;
         case 'google_trends': run.searchStats.productsFromGoogleTrends++; break;
         case 'reddit': run.searchStats.productsFromReddit++; break;
         case 'amazon': run.searchStats.productsFromAmazon++; break;
       }
       
       run.productsFound++;
+      
+      // Emit product batch for UI rendering (every 3 products or on first)
+      if (products.length <= 3 || products.length % 3 === 0) {
+        this.emitActivity(run.id, {
+          type: 'product_batch',
+          timestamp: new Date().toISOString(),
+          message: `🛍️ Found ${products.length} products so far`,
+          details: {
+            products: products.slice(-6).map(p => ({
+              id: p.id,
+              name: p.name,
+              description: p.description,
+              imageUrl: p.imageUrl,
+              videoUrl: p.videoUrl || p.tiktokVideoUrl,
+              sourceUrl: p.sourceUrl,
+              price: p.price,
+              originalPrice: p.originalPrice,
+              rating: p.rating,
+              reviewCount: p.reviewCount,
+              source: p.source,
+              cjData: p.cjData,
+              tiktokShopData: p.tiktokShopData,
+            })),
+            totalProducts: products.length
+          }
+        });
+      }
       
       this.emitActivity(run.id, {
         type: 'product_found',
@@ -450,6 +515,145 @@ export class AdaptiveResearchPipeline extends EventEmitter {
         type: 'error',
         timestamp: new Date().toISOString(),
         message: `[TikTok] #${candidate.term} failed: ${error.message}`,
+      });
+    }
+
+    return products;
+  }
+
+  /**
+   * Generate TikTok Shop search keywords from category
+   */
+  private generateTikTokShopKeywords(category: string, subcategory: string, iteration: number): string[] {
+    const baseKeywords = [
+      category,
+      subcategory,
+      `${category} ${subcategory}`,
+      `best ${category}`,
+      `trending ${category}`,
+      `viral ${subcategory}`,
+      `${category} must have`,
+      `${category} finds`,
+      `popular ${subcategory}`,
+      `${category} 2026`,
+    ];
+    
+    // Add variation based on iteration
+    if (iteration > 1) {
+      baseKeywords.push(
+        `new ${category}`,
+        `hot ${subcategory}`,
+        `${category} deals`,
+        `${subcategory} collection`,
+        `affordable ${category}`
+      );
+    }
+    
+    return baseKeywords;
+  }
+
+  /**
+   * Search TikTok Shop with keyword - returns actual products with images, prices, videos
+   */
+  private async searchTikTokShop(run: ResearchRun, keyword: string, category: string): Promise<Product[]> {
+    const products: Product[] = [];
+    
+    this.emitActivity(run.id, {
+      type: 'actor_start',
+      timestamp: new Date().toISOString(),
+      message: `[TikTok Shop] Searching: "${keyword}"`,
+      details: { keyword, source: 'tiktok_shop' }
+    });
+
+    try {
+      const input = {
+        mode: 'Shop Search',
+        search: keyword,
+        maxResult: 20,
+        region: 'US',
+      };
+
+      const actorRun = await apifyService.runActor(SHOPPDROPP_ACTORS.tiktok_shop, input, {
+        waitForFinish: true,
+        waitSecs: 180,
+      });
+
+      const results = await apifyService.getDatasetItems(actorRun.defaultDatasetId, { limit: 50 });
+      
+      this.emitActivity(run.id, {
+        type: 'actor_complete',
+        timestamp: new Date().toISOString(),
+        message: `[TikTok Shop] "${keyword}": ${results.length} products`,
+        details: { keyword, count: results.length, source: 'tiktok_shop' }
+      });
+
+      // Extract products from TikTok Shop results
+      for (const item of results) {
+        if (item.title || item.productName) {
+          const productName = item.title || item.productName || '';
+          const description = item.description || item.productDescription || '';
+          
+          // Parse price
+          let price: number | undefined;
+          if (item.price?.min || item.price?.max) {
+            price = item.price.min || item.price.max;
+          } else if (typeof item.price === 'number') {
+            price = item.price;
+          } else if (typeof item.price === 'string') {
+            price = parseFloat(item.price.replace(/[^0-9.]/g, ''));
+          }
+          
+          // Parse original/compare price
+          let originalPrice: number | undefined;
+          if (item.originalPrice || item.compareAtPrice) {
+            const raw = item.originalPrice || item.compareAtPrice;
+            if (typeof raw === 'number') originalPrice = raw;
+            else if (typeof raw === 'string') originalPrice = parseFloat(raw.replace(/[^0-9.]/g, ''));
+          }
+          
+          // Get images
+          const imageUrl = item.mainImage?.url || item.images?.[0]?.url || item.image || item.thumbnail;
+          
+          // Get video URL if available
+          const videoUrl = item.videoUrl || item.video?.url || item.promotionVideo?.url;
+          
+          // Get product URL
+          const sourceUrl = item.productUrl || item.url || item.link || `https://shop.tiktok.com/product/${item.productId}`;
+          
+          products.push({
+            id: uuidv4(),
+            name: productName.substring(0, 200),
+            description: description.substring(0, 500),
+            source: 'tiktok_shop',
+            sourceUrl: sourceUrl,
+            category: category,
+            searchTerm: keyword,
+            imageUrl: imageUrl,
+            videoUrl: videoUrl,
+            tiktokVideoUrl: videoUrl,
+            price: price,
+            originalPrice: originalPrice,
+            rating: item.rating || item.ratingScore,
+            reviewCount: item.reviewCount || item.reviews,
+            relevanceScore: item.soldCount ? Math.min(item.soldCount / 100, 10) : 5,
+            timestamp: new Date().toISOString(),
+            raw: item,
+            tiktokShopData: {
+              shopName: item.shopName || item.seller,
+              soldCount: item.soldCount || item.sales,
+              gmv: item.gmv || item.grossMerchandiseValue,
+              commissionRate: item.commissionRate,
+              productId: item.productId || item.id,
+            }
+          });
+        }
+      }
+    } catch (error: any) {
+      this.emitActivity(run.id, {
+        type: 'error',
+        timestamp: new Date().toISOString(),
+        message: `[TikTok Shop] "${keyword}" failed: ${error.message}`,
+        details: { keyword, error: error.message }
       });
     }
 
@@ -770,6 +974,7 @@ export class AdaptiveResearchPipeline extends EventEmitter {
         searches: run.searchStats.totalSearches,
         bySource: {
           tiktok: run.searchStats.productsFromTikTok,
+          tiktokShop: run.searchStats.productsFromTikTokShop,
           googleTrends: run.searchStats.productsFromGoogleTrends,
           reddit: run.searchStats.productsFromReddit,
           amazon: run.searchStats.productsFromAmazon
