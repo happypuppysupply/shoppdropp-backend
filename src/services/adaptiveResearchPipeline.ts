@@ -595,7 +595,20 @@ export class AdaptiveResearchPipeline extends EventEmitter {
         waitSecs: 180,
       });
 
-      const results = await apifyService.getDatasetItems(actorRun.defaultDatasetId, { limit: 50 });
+      // Wait and retry for dataset to be populated
+      let results: any[] = [];
+      let retries = 0;
+      const maxRetries = 5;
+      
+      while (retries < maxRetries) {
+        results = await apifyService.getDatasetItems(actorRun.defaultDatasetId, { limit: 50 });
+        if (results.length > 0) {
+          break;
+        }
+        // Wait 2 seconds before retrying
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        retries++;
+      }
       
       this.emitActivity(run.id, {
         type: 'actor_complete',
@@ -699,7 +712,20 @@ export class AdaptiveResearchPipeline extends EventEmitter {
         waitSecs: 60,
       });
 
-      const results = await apifyService.getDatasetItems(actorRun.defaultDatasetId, { limit: 50 });
+      // Wait and retry for dataset to be populated
+      let results: any[] = [];
+      let retries = 0;
+      const maxRetries = 5;
+      
+      while (retries < maxRetries) {
+        results = await apifyService.getDatasetItems(actorRun.defaultDatasetId, { limit: 50 });
+        if (results.length > 0) {
+          break;
+        }
+        // Wait 2 seconds before retrying
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        retries++;
+      }
       
       this.emitActivity(run.id, {
         type: 'actor_complete',
