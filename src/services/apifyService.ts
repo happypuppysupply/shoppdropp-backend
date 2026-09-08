@@ -171,7 +171,7 @@ export class ApifyService {
     waitSecs?: number;
   } = {}): Promise<ApifyRunResult> {
     const runOptions: any = {
-      ...input && { input },
+      ...input,  // Spread input fields at top level (not wrapped in { input })
       ...options.memory && { memory: options.memory },
       ...options.timeout && { timeout: options.timeout },
     };
