@@ -1057,41 +1057,56 @@ export class AdaptiveResearchPipeline extends EventEmitter {
   }
 
   /**
-   * Extract key search terms from a product name for CJ search
-   * Uses first 2-3 meaningful words to improve match rate
+   * Extract category-focused search terms from a product name for CJ search
+   * Strips brand names and descriptors, keeps only product category keywords
    */
   private extractCJSearchTerms(productName: string): string[] {
-    // Remove common descriptors and stop words
-    const stopWords = new Set(['the', 'a', 'an', 'and', 'or', 'for', 'with', 'in', 'on', 'at', 'to', 'of', 'by', 'from', 'up', 'about', 'into', 'through', 'during', 'before', 'after', 'above', 'below', 'between', 'among', 'within', 'without', 'against', 'under', 'over', 'via', 'per', 'via', 'new', 'premium', 'professional', 'original', 'authentic', 'genuine', 'official', 'brand', 'hot', 'best', 'top', 'high', 'quality', 'super', 'ultra', 'mega', 'mini', 'max', 'pro', 'plus', 'lite', ' deluxe', 'ultimate', 'advanced', 'enhanced', 'improved', 'upgraded', 'latest', 'modern', ' stylish', 'trendy', 'popular', 'famous', 'recommended', 'suggested', 'selected', 'exclusive', 'special', 'limited', 'edition', 'collection', 'series', 'set', 'kit', 'pack', 'bundle', 'combo', 'deal', 'sale', 'discount', 'offer', 'gift', 'free', 'bonus', 'extra', 'additional', 'more', 'most', 'very', 'really', 'truly', 'actually', 'definitely', 'absolutely', 'completely', 'totally', 'fully', 'entirely', 'quite', 'rather', 'pretty', 'fairly', 'somewhat', 'slightly', 'hardly', 'barely', 'nearly', 'almost', 'practically', 'virtually', 'basically', 'essentially', 'fundamentally', 'primarily', 'mainly', 'mostly', 'largely', 'partly', 'partially', 'specifically', 'particularly', 'especially', 'notably', 'remarkably', 'significantly', 'considerably', 'substantially', 'greatly', 'highly', 'deeply', 'strongly', 'widely', 'broadly', 'generally', 'typically', 'usually', 'normally', 'commonly', 'frequently', 'often', 'regularly', 'repeatedly', 'consistently', 'constantly', 'continuously', 'continually', 'persistently', 'permanently', 'temporarily', 'occasionally', 'sometimes', 'rarely', 'seldom', 'never', 'always', 'forever', 'ever', 'never', 'yet', 'still', 'already', 'soon', 'now', 'then', 'today', 'tomorrow', 'yesterday', 'tonight', 'morning', 'afternoon', 'evening', 'night', 'day', 'week', 'month', 'year', 'time', 'moment', 'minute', 'second', 'hour', 'date', 'period', 'era', 'age', 'epoch', 'season', 'spring', 'summer', 'autumn', 'fall', 'winter', 'january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'first', 'second', 'third', 'fourth', 'fifth', 'last', 'final', 'next', 'previous', 'former', 'latter', 'other', 'another', 'same', 'different', 'similar', 'various', 'several', 'many', 'much', 'more', 'most', 'some', 'any', 'all', 'none', 'no', 'each', 'every', 'both', 'either', 'neither', 'half', 'whole', 'full', 'empty', 'enough', 'plenty', 'lot', 'few', 'little', 'less', 'least', 'fewer', 'small', 'large', 'big', 'huge', 'tiny', 'little', 'short', 'long', 'tall', 'high', 'low', 'deep', 'shallow', 'wide', 'narrow', 'thick', 'thin', 'fat', ' slim', 'heavy', 'light', 'strong', 'weak', 'hard', 'soft', 'smooth', 'rough', 'sharp', 'blunt', 'flat', 'round', 'square', 'straight', 'curved', 'bent', 'twisted', 'clean', 'dirty', 'fresh', 'stale', 'wet', 'dry', 'damp', 'moist', 'hot', 'cold', 'warm', 'cool', 'freezing', 'boiling', 'lukewarm', 'tepid', 'icy', 'burning', 'frozen', 'melted', 'solid', 'liquid', 'gas', 'air', 'water', 'fire', 'earth', 'wind', 'rain', 'snow', 'ice', 'steam', 'fog', 'mist', 'cloud', 'smoke', 'dust', 'sand', 'soil', 'mud', 'clay', 'rock', 'stone', 'gravel', 'pebble', 'crystal', 'gem', 'jewel', 'diamond', 'gold', 'silver', 'copper', 'iron', 'steel', 'metal', 'wood', 'paper', 'glass', 'plastic', 'rubber', 'leather', 'cotton', 'silk', 'wool', 'linen', 'nylon', 'polyester', 'fiber', 'fabric', 'cloth', 'material', 'substance', 'stuff', 'thing', 'object', 'item', 'piece', 'part', 'portion', 'section', 'segment', 'component', 'element', 'ingredient', 'factor', 'aspect', 'feature', 'characteristic', 'quality', 'property', 'attribute', 'trait', 'detail', 'point', 'element', 'item', 'unit', 'member', 'individual', 'entity', 'being', 'creature', 'animal', 'plant', 'human', 'person', 'people', 'man', 'woman', 'child', 'baby', 'adult', 'youth', 'teenager', 'adult', 'senior', 'elder', 'male', 'female', 'boy', 'girl', 'guy', 'lady', 'gentleman', 'friend', 'enemy', 'stranger', 'neighbor', 'colleague', 'partner', 'spouse', 'parent', 'mother', 'father', 'mom', 'dad', 'son', 'daughter', 'brother', 'sister', 'sibling', 'cousin', 'uncle', 'aunt', 'nephew', 'niece', 'relative', 'family', 'home', 'house', 'room', 'kitchen', 'bedroom', 'bathroom', 'living', 'dining', 'garage', 'garden', 'yard', 'office', 'school', 'college', 'university', 'hospital', 'clinic', 'store', 'shop', 'market', 'mall', 'restaurant', 'cafe', 'hotel', 'motel', 'building', 'tower', 'bridge', 'road', 'street', 'avenue', 'lane', 'drive', 'way', 'path', 'trail', 'track', 'route', 'course', 'direction', 'place', 'location', 'position', 'spot', 'site', 'area', 'region', 'zone', 'district', 'neighborhood', 'city', 'town', 'village', 'country', 'nation', 'state', 'province', 'county', 'continent', 'world', 'globe', 'earth', 'planet', 'space', 'universe', 'nature', 'environment', 'ecosystem', 'habitat', 'climate', 'weather', 'temperature', 'humidity', 'pressure', 'wind', 'storm', 'hurricane', 'tornado', 'earthquake', 'flood', 'drought', 'fire', 'disaster', 'accident', 'incident', 'event', 'occasion', 'situation', 'circumstance', 'condition', 'state', 'status', 'position', 'level', 'degree', 'grade', 'rank', 'class', 'category', 'type', 'kind', 'sort', 'variety', 'form', 'shape', 'size', 'color', 'colour', 'red', 'blue', 'green', 'yellow', 'orange', 'purple', 'pink', 'brown', 'black', 'white', 'gray', 'grey', 'silver', 'gold', 'beige', 'cream', 'ivory', 'maroon', 'navy', 'teal', 'olive', 'lime', 'aqua', 'coral', 'peach', 'mauve', 'tan', 'khaki', 'indigo', 'violet', 'magenta', 'cyan', 'turquoise', 'bronze', 'copper', 'brass', 'platinum', 'chrome', 'nickel', 'zinc', 'lead', 'tin', 'aluminum', 'aluminium']);
+    const lower = productName.toLowerCase();
     
-    const words = productName
-      .toLowerCase()
-      .replace(/[^a-z0-9\s]/g, ' ')
-      .split(/\s+/)
-      .filter(w => w.length > 2 && !stopWords.has(w));
+    // Common brand names to strip (add more as discovered)
+    const brandNames = ['pupford', 'purina', 'kibbles', 'meow mix', 'nutro', 'furbo', 'veken', 'bernies', 'native pet', 'therapetmd', 'cassiel', 'king lou', 'simply nourish', 'freshpet'];
     
-    // Generate search terms of varying specificity
+    // Product category keywords that CJ uses
+    const categoryKeywords = ['dog food', 'cat food', 'pet food', 'dog treat', 'cat treat', 'pet treat', 'dog toy', 'cat toy', 'pet toy', 'dog bed', 'cat bed', 'pet bed', 'dog leash', 'cat leash', 'pet leash', 'dog collar', 'cat collar', 'pet collar', 'dog harness', 'pet harness', 'dog bowl', 'cat bowl', 'pet bowl', 'dog brush', 'cat brush', 'pet brush', 'grooming glove', 'pet glove', 'dog grooming', 'cat grooming', 'pet grooming', 'water fountain', 'pet fountain', 'cat fountain', 'dog camera', 'pet camera', 'calming diffuser', 'pet diffuser', 'dog calming', 'cat calming', 'allergy chew', 'dog chew', 'cat chew', 'pet chew', 'jerky treat', 'freeze dried', 'freeze-dried', 'raw food', 'dry food', 'wet food', 'canned food', 'puppy food', 'kitten food', 'senior food', 'weight management', 'high protein', 'grain free', 'organic food', 'natural food', 'holistic food', 'veterinary diet', 'prescription diet', 'dental chew', 'bone', 'antler', 'hoof', 'ear', 'hide', 'rawhide', 'pig ear', 'cow ear', 'yak chew', 'bully stick', 'training treat', 'pill pocket', 'lick mat', 'snuffle mat', 'puzzle toy', 'interactive toy', 'chew toy', 'plush toy', 'squeaky toy', 'rope toy', 'ball toy', 'fetch toy', 'tug toy', 'scratching post', 'cat tree', 'cat condo', 'playpen', 'crate', 'carrier', 'backpack carrier', 'stroller', 'gate', 'fence', 'play yard', 'potty pad', 'pee pad', 'diaper', 'belly band', 'waste bag', 'poop bag', 'litter box', 'litter mat', 'litter scoop', 'cat litter', 'clumping litter', 'crystal litter', 'pine litter', 'wheat litter', 'corn litter', 'paper litter', 'litter deodorizer', 'stain remover', 'odor eliminator', 'enzyme cleaner', 'pet wipe', 'ear cleaner', 'eye cleaner', 'dental wipe', 'toothbrush', 'toothpaste', 'nail clipper', 'nail grinder', 'shampoo', 'conditioner', 'dry shampoo', 'deo spray', 'perfume', 'colgone', 'bandana', 'clothing', 'sweater', 'coat', 'jacket', 'raincoat', 'booties', 'socks', 'pajamas', 'costume', 'halloween', 'christmas', 'birthday', 'id tag', 'microchip', 'gps tracker', 'fitness tracker', 'smart collar', 'automatic feeder', 'food dispenser', 'treat dispenser', 'water dispenser', 'fountain', 'heating pad', 'cooling mat', 'elevated bed', 'orthopedic bed', 'memory foam', 'donut bed', 'cave bed', 'igloo', 'tent bed', 'car seat', 'seat cover', 'cargo liner', 'ramp', 'steps', 'stair', 'life jacket', 'swimming vest', 'muzzle', 'cone', 'recovery suit', 'wound care', 'first aid', 'supplement', 'vitamin', 'probiotic', 'omega', 'fish oil', 'glucosamine', 'cbd', 'hemp', 'calming treat', 'anxiety relief', 'joint support', 'skin coat', 'digestive health', 'immune support', 'weight control', 'urinary health', 'kidney support', 'liver support', 'heart health', 'senior care', 'puppy care', 'kitten care'];
+    
+    // Extract category matches from the product name
     const terms: string[] = [];
     
-    // First 2 words (most specific)
+    // 1. Check if product name contains any known category keyword
+    for (const keyword of categoryKeywords) {
+      if (lower.includes(keyword)) {
+        terms.push(keyword);
+      }
+    }
+    
+    // 2. Strip brand names and get clean product type
+    let cleaned = lower;
+    for (const brand of brandNames) {
+      cleaned = cleaned.replace(new RegExp('\\b' + brand + '\\b', 'g'), '');
+    }
+    cleaned = cleaned.replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+    
+    // 3. Extract first 2-3 meaningful words (likely the product type)
+    const words = cleaned.split(' ').filter(w => w.length > 2);
     if (words.length >= 2) {
       terms.push(words.slice(0, 2).join(' '));
     }
-    
-    // First 3 words
     if (words.length >= 3) {
       terms.push(words.slice(0, 3).join(' '));
     }
     
-    // Single most important word (category indicator)
-    if (words.length > 0) {
-      terms.push(words[0]);
+    // 4. Single core noun (dog, cat, pet + the next noun)
+    if (words.length >= 2 && ['dog', 'cat', 'pet'].includes(words[0])) {
+      terms.push(words[0] + ' ' + words[1]);
     }
     
-    // Fallback to cleaned full name (limited)
-    terms.push(productName.substring(0, 40).trim());
+    // 5. Fallback: search the broad category
+    if (lower.includes('dog')) terms.push('dog supplies');
+    if (lower.includes('cat')) terms.push('cat supplies');
+    if (lower.includes('pet')) terms.push('pet supplies');
     
-    return [...new Set(terms)];
+    // Remove duplicates and return
+    return [...new Set(terms)].filter(t => t.length > 2);
   }
 
   /**
