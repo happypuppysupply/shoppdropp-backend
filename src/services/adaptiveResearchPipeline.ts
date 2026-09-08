@@ -605,31 +605,28 @@ export class AdaptiveResearchPipeline extends EventEmitter {
       });
 
       // Extract products from TikTok Shop results
+      this.emitActivity(run.id, {
+        type: 'info',
+        timestamp: new Date().toISOString(),
+        message: `[TikTok Shop] Processing ${results.length} raw results for "${keyword}"`,
+        details: { keyword, resultCount: results.length }
+      });
+      
       for (const item of results) {
-        if (item.title) {
-          const productName = item.title || '';
+        // Require both title AND primaryImage for a valid product
+        if (item.title && item.primaryImage) {
+          const productName = item.title;
           const description = item.description || '';
           
           // Parse price from priceDisplay (e.g., "$33.99")
           let price: number | undefined;
           if (item.priceDisplay) {
-            price = parseFloat(item.priceDisplay.replace(/[^0-9.]/g, ''));
-          } else if (item.price?.min) {
-            price = item.price.min;
-          } else if (typeof item.price === 'number') {
-            price = item.price;
-          } else if (typeof item.price === 'string') {
-            price = parseFloat(item.price.replace(/[^0-9.]/g, ''));
+            const priceMatch = item.priceDisplay.match(/[\d.]+/);
+            if (priceMatch) price = parseFloat(priceMatch[0]);
           }
           
-          // Parse original/compare price
-          let originalPrice: number | undefined;
-          if (item.originalPrice) {
-            originalPrice = parseFloat(item.originalPrice.replace(/[^0-9.]/g, ''));
-          }
-          
-          // Get images - use primaryImage from TikTok Shop
-          const imageUrl = item.primaryImage || item.mainImage?.url || item.images?.[0]?.url || item.image;
+          // Get images - MUST have primaryImage
+          const imageUrl = item.primaryImage;
           
           // Get product URL
           const sourceUrl = item.productUrl || `https://www.tiktok.com/shop/pdp/${item.productId}`;
@@ -658,6 +655,13 @@ export class AdaptiveResearchPipeline extends EventEmitter {
           });
         }
       }
+      
+      this.emitActivity(run.id, {
+        type: 'info',
+        timestamp: new Date().toISOString(),
+        message: `[TikTok Shop] Extracted ${products.length} valid products from ${results.length} results`,
+        details: { keyword, extractedCount: products.length, resultCount: results.length }
+      });
     } catch (error: any) {
       this.emitActivity(run.id, {
         type: 'error',
