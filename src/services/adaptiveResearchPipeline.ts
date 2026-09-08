@@ -626,10 +626,12 @@ export class AdaptiveResearchPipeline extends EventEmitter {
 
     try {
       const input = {
-        mode: 'Shop Search',
-        search: [keyword],  // Array format required by TikTok Shop actor
-        maxResult: 20,
+        mode: 'shop_search',
+        searchKeywords: [keyword],
         region: 'US',
+        maxResults: 20,
+        maxReviewsPerProduct: 0,
+        getRelatedVideos: false
       };
 
       const actorRun = await apifyService.runActor(SHOPPDROPP_ACTORS.tiktok_shop, input, {
