@@ -98,6 +98,7 @@ interface Product {
     gmv?: number;
     commissionRate?: number;
     productId?: string;
+    discountPercent?: number;
   };
 }
 
@@ -132,9 +133,9 @@ export class AdaptiveResearchPipeline extends EventEmitter {
     const config: ResearchConfig = {
       targetProducts: onboardingData.productCount || 20,
       maxSearchCandidates: 50,
-      maxActorRuns: 100,
-      maxIterations: 20,
-      maxRetriesPerSearch: 2,
+      maxActorRuns: 10,
+      maxIterations: 1,  // Only run 1 iteration to conserve credits
+      maxRetriesPerSearch: 1,
       batchSize: 5
     };
 
@@ -256,7 +257,7 @@ export class AdaptiveResearchPipeline extends EventEmitter {
       // Run multiple searches per actor in this iteration
       const batchSize = Math.min(config.batchSize, config.targetProducts - products.length);
       
-      // TIKTOK SHOP - PRIMARY SOURCE (search by keyword)
+      // TIKTOK SHOP ONLY - Skip all other actors to conserve credits
       if (products.length < config.targetProducts) {
         const tiktokShopKeywords = this.generateTikTokShopKeywords(category, subcategory, iteration);
         for (const keyword of tiktokShopKeywords.slice(0, batchSize)) {
@@ -269,62 +270,13 @@ export class AdaptiveResearchPipeline extends EventEmitter {
           if (products.length >= config.targetProducts) break;
         }
       }
-
-      // TikTok hashtag searches (for trending signal)
-      if (products.length < config.targetProducts && this.candidateGenerator.hasMoreCandidates(candidates.tiktok)) {
-        const tiktokBatch = this.candidateGenerator.getNextCandidates(candidates.tiktok, batchSize);
-        for (const candidate of tiktokBatch) {
-          if (totalActorRuns >= config.maxActorRuns) break;
-          const newProducts = await this.searchTikTok(run, candidate);
-          this.addProducts(products, newProducts, seenUrls, seenNames, run);
-          totalActorRuns++;
-          run.searchStats.tiktokSearches++;
-          
-          if (products.length >= config.targetProducts) break;
-        }
-      }
-
-      // Google Trends searches
-      if (products.length < config.targetProducts && this.candidateGenerator.hasMoreCandidates(candidates.googleTrends)) {
-        const trendsBatch = this.candidateGenerator.getNextCandidates(candidates.googleTrends, batchSize);
-        for (const candidate of trendsBatch) {
-          if (totalActorRuns >= config.maxActorRuns) break;
-          const newProducts = await this.searchGoogleTrends(run, candidate);
-          this.addProducts(products, newProducts, seenUrls, seenNames, run);
-          totalActorRuns++;
-          run.searchStats.googleTrendsSearches++;
-          
-          if (products.length >= config.targetProducts) break;
-        }
-      }
-
-      // Reddit searches
-      if (products.length < config.targetProducts && this.candidateGenerator.hasMoreCandidates(candidates.reddit)) {
-        const redditBatch = this.candidateGenerator.getNextCandidates(candidates.reddit, batchSize);
-        for (const candidate of redditBatch) {
-          if (totalActorRuns >= config.maxActorRuns) break;
-          const newProducts = await this.searchReddit(run, candidate, context.onboardingData);
-          this.addProducts(products, newProducts, seenUrls, seenNames, run);
-          totalActorRuns++;
-          run.searchStats.redditSearches++;
-          
-          if (products.length >= config.targetProducts) break;
-        }
-      }
-
-      // Amazon searches
-      if (products.length < config.targetProducts && this.candidateGenerator.hasMoreCandidates(candidates.amazon)) {
-        const amazonBatch = this.candidateGenerator.getNextCandidates(candidates.amazon, batchSize);
-        for (const candidate of amazonBatch) {
-          if (totalActorRuns >= config.maxActorRuns) break;
-          const newProducts = await this.searchAmazon(run, candidate);
-          this.addProducts(products, newProducts, seenUrls, seenNames, run);
-          totalActorRuns++;
-          run.searchStats.amazonSearches++;
-          
-          if (products.length >= config.targetProducts) break;
-        }
-      }
+      
+      // Skip other actors to conserve credits - only run TikTok Shop
+      this.emitActivity(run.id, {
+        type: 'info',
+        timestamp: new Date().toISOString(),
+        message: `ℹ️ Skipping Trends/Reddit/Amazon to conserve credits`,
+      });
 
       // Progress update
       this.emitActivity(run.id, {
