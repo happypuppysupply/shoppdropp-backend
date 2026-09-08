@@ -19,7 +19,7 @@ interface ResearchContext {
 }
 
 interface StreamingActivity {
-  type: 'info' | 'success' | 'warning' | 'error' | 'actor_start' | 'actor_complete' | 'product_found' | 'search_exhausted';
+  type: 'info' | 'success' | 'warning' | 'error' | 'actor_start' | 'actor_complete' | 'product_found' | 'product_batch' | 'search_exhausted';
   timestamp: string;
   message: string;
   details?: any;
@@ -53,11 +53,13 @@ interface ResearchConfig {
 
 interface SearchStats {
   tiktokSearches: number;
+  tiktokShopSearches: number;
   googleTrendsSearches: number;
   redditSearches: number;
   amazonSearches: number;
   totalSearches: number;
   productsFromTikTok: number;
+  productsFromTikTokShop: number;
   productsFromGoogleTrends: number;
   productsFromReddit: number;
   productsFromAmazon: number;
@@ -68,18 +70,35 @@ interface SearchStats {
 interface Product {
   id: string;
   name: string;
+  description?: string;
   source: string;
   sourceUrl?: string;
   category: string;
   searchTerm: string;
   imageUrl?: string;
+  videoUrl?: string;
+  tiktokVideoUrl?: string;
   price?: number;
+  originalPrice?: number;
   rating?: number;
   reviewCount?: number;
   trendSignal?: string;
   relevanceScore: number;
   timestamp: string;
   raw: any;
+  cjData?: {
+    available: boolean;
+    productId?: string;
+    price?: number;
+    warehouse?: string;
+  };
+  tiktokShopData?: {
+    shopName?: string;
+    soldCount?: number;
+    gmv?: number;
+    commissionRate?: number;
+    productId?: string;
+  };
 }
 
 // Apify Actor IDs
@@ -88,6 +107,8 @@ const SHOPPDROPP_ACTORS = {
   reddit: 'oAuCIx3ItNrs2okjQ',
   google_trends: 'DyNQEYDj9awfGQf9A',
   amazon: 'BG3WDrGdteHgZgbPK',
+  tiktok_shop: 'C97SUiMlbZ75x6u22',  // unseenuser/TikTok-Shop-Scraper - products, reviews, GMV
+  tiktok_shop_creators: '7WXZyKLZvyOPbf5Ih',  // lemur/tiktok-shop-creators - creator performance
 };
 
 export class AdaptiveResearchPipeline extends EventEmitter {
@@ -131,11 +152,13 @@ export class AdaptiveResearchPipeline extends EventEmitter {
       productsVerified: 0,
       searchStats: {
         tiktokSearches: 0,
+        tiktokShopSearches: 0,
         googleTrendsSearches: 0,
         redditSearches: 0,
         amazonSearches: 0,
         totalSearches: 0,
         productsFromTikTok: 0,
+        productsFromTikTokShop: 0,
         productsFromGoogleTrends: 0,
         productsFromReddit: 0,
         productsFromAmazon: 0,
@@ -183,13 +206,18 @@ export class AdaptiveResearchPipeline extends EventEmitter {
    */
   private async executeAdaptivePipeline(run: ResearchRun): Promise<void> {
     const { context, config } = run;
-    const { category, subcategory } = context.onboardingData;
+    const { category: rawCategory, subcategory: rawSubcategory } = context.onboardingData;
+    
+    // Clean category/subcategory to remove emojis, descriptions, special chars
+    const category = this.cleanKeyword(rawCategory);
+    const subcategory = rawSubcategory ? this.cleanKeyword(rawSubcategory) : category;
     
     // Generate all search candidates
     this.emitActivity(run.id, {
       type: 'info',
       timestamp: new Date().toISOString(),
-      message: '🎯 Generating search candidates...',
+      message: `🎯 Generating search candidates for: ${category}`,
+      details: { category, subcategory }
     });
 
     const candidates = this.candidateGenerator.generateCandidates(category, subcategory);
@@ -210,11 +238,12 @@ export class AdaptiveResearchPipeline extends EventEmitter {
     let iteration = 0;
 
     // Continue searching until target reached or budget exhausted
+    // Note: hasMoreCandidates is not a stopping condition because TikTok Shop
+    // generates fresh keywords each iteration via generateTikTokShopKeywords
     while (
       products.length < config.targetProducts &&
       totalActorRuns < config.maxActorRuns &&
-      iteration < config.maxIterations &&
-      this.hasMoreCandidates(candidates)
+      iteration < config.maxIterations
     ) {
       iteration++;
       
@@ -227,8 +256,22 @@ export class AdaptiveResearchPipeline extends EventEmitter {
       // Run multiple searches per actor in this iteration
       const batchSize = Math.min(config.batchSize, config.targetProducts - products.length);
       
-      // TikTok searches
-      if (this.candidateGenerator.hasMoreCandidates(candidates.tiktok)) {
+      // TIKTOK SHOP - PRIMARY SOURCE (search by keyword)
+      if (products.length < config.targetProducts) {
+        const tiktokShopKeywords = this.generateTikTokShopKeywords(category, subcategory, iteration);
+        for (const keyword of tiktokShopKeywords.slice(0, batchSize)) {
+          if (totalActorRuns >= config.maxActorRuns) break;
+          const newProducts = await this.searchTikTokShop(run, keyword, category);
+          this.addProducts(products, newProducts, seenUrls, seenNames, run);
+          totalActorRuns++;
+          run.searchStats.tiktokShopSearches++;
+          
+          if (products.length >= config.targetProducts) break;
+        }
+      }
+
+      // TikTok hashtag searches (for trending signal)
+      if (products.length < config.targetProducts && this.candidateGenerator.hasMoreCandidates(candidates.tiktok)) {
         const tiktokBatch = this.candidateGenerator.getNextCandidates(candidates.tiktok, batchSize);
         for (const candidate of tiktokBatch) {
           if (totalActorRuns >= config.maxActorRuns) break;
@@ -369,12 +412,40 @@ export class AdaptiveResearchPipeline extends EventEmitter {
       // Update source stats
       switch (product.source) {
         case 'tiktok': run.searchStats.productsFromTikTok++; break;
+        case 'tiktok_shop': run.searchStats.productsFromTikTokShop++; break;
         case 'google_trends': run.searchStats.productsFromGoogleTrends++; break;
         case 'reddit': run.searchStats.productsFromReddit++; break;
         case 'amazon': run.searchStats.productsFromAmazon++; break;
       }
       
       run.productsFound++;
+      
+      // Emit product batch for UI rendering (every 3 products or on first)
+      if (products.length <= 3 || products.length % 3 === 0) {
+        this.emitActivity(run.id, {
+          type: 'product_batch',
+          timestamp: new Date().toISOString(),
+          message: `🛍️ Found ${products.length} products so far`,
+          details: {
+            products: products.slice(-6).map(p => ({
+              id: p.id,
+              name: p.name,
+              description: p.description,
+              imageUrl: p.imageUrl,
+              videoUrl: p.videoUrl || p.tiktokVideoUrl,
+              sourceUrl: p.sourceUrl,
+              price: p.price,
+              originalPrice: p.originalPrice,
+              rating: p.rating,
+              reviewCount: p.reviewCount,
+              source: p.source,
+              cjData: p.cjData,
+              tiktokShopData: p.tiktokShopData,
+            })),
+            totalProducts: products.length
+          }
+        });
+      }
       
       this.emitActivity(run.id, {
         type: 'product_found',
@@ -450,6 +521,148 @@ export class AdaptiveResearchPipeline extends EventEmitter {
         type: 'error',
         timestamp: new Date().toISOString(),
         message: `[TikTok] #${candidate.term} failed: ${error.message}`,
+      });
+    }
+
+    return products;
+  }
+
+  /**
+   * Generate TikTok Shop search keywords from category
+   * Uses specific product terms rather than generic categories for better results
+   */
+  private generateTikTokShopKeywords(category: string, subcategory: string, iteration: number): string[] {
+    // Map categories to specific product search terms that work well on TikTok Shop
+    const categoryProductMap: Record<string, string[]> = {
+      'pet': ['pet toys', 'dog bed', 'cat tree', 'pet bowl', 'dog leash', 'pet brush', 'dog toy', 'cat toy', 'pet bed', 'pet carrier'],
+      'dog': ['dog toys', 'dog bed', 'dog leash', 'dog collar', 'dog bowl', 'dog treats', 'dog harness', 'dog grooming', 'dog accessories', 'puppy supplies'],
+      'cat': ['cat toys', 'cat tree', 'cat bed', 'cat litter', 'cat scratcher', 'cat treats', 'cat bowl', 'cat carrier', 'cat collar', 'kitten supplies'],
+      'home': ['home decor', 'wall art', 'storage organizer', 'kitchen gadgets', 'home accessories', 'bathroom accessories', 'bedding set', 'throw pillows', 'candles', 'mirrors'],
+      'kitchen': ['kitchen gadgets', 'cooking utensils', 'food containers', 'coffee maker', 'air fryer', 'blender', 'kitchen organizer', 'cutting board', 'spice rack', 'apron'],
+      'beauty': ['makeup brushes', 'skincare tools', 'hair dryer', 'beauty blender', 'face roller', 'makeup remover', 'lipstick set', 'eyelash curler', 'nail dryer', 'facial cleanser'],
+      'fashion': ['sunglasses', 'jewelry set', 'handbag', 'watches', 'hair clips', 'fashion accessories', 'scarves', 'belts', 'hats', 'socks pack'],
+      'electronics': ['phone case', 'airpods case', 'phone stand', 'cable organizer', 'wireless charger', 'bluetooth speaker', 'smart watch', 'led lights', 'power bank', 'usb hub'],
+      'sports': ['yoga mat', 'resistance bands', 'water bottle', 'gym bag', 'sports watch', 'fitness tracker', 'massage gun', 'foam roller', 'jump rope', 'exercise ball'],
+      'toys': ['building blocks', 'educational toys', 'plush toys', 'remote control car', 'puzzle games', 'action figures', 'doll house', 'board games', 'kids tent', 'slime kit'],
+    };
+
+    // Get specific products for this category, fallback to generic terms
+    const specificProducts = categoryProductMap[category.toLowerCase()] || 
+                             categoryProductMap[subcategory.toLowerCase()] || 
+                             [`${category} products`, subcategory, category];
+
+    // Add iteration-based variations
+    if (iteration === 1) {
+      return specificProducts.slice(0, 5);
+    } else if (iteration === 2) {
+      return [...specificProducts.slice(5, 10), `best ${category} products`, `trending ${subcategory}`];
+    } else {
+      return [`new ${category} arrivals`, `hot ${subcategory} 2026`, `${category} deals`, `viral ${category}`];
+    }
+  }
+
+  /**
+   * Search TikTok Shop with keyword - returns actual products with images, prices, videos
+   */
+  private async searchTikTokShop(run: ResearchRun, keyword: string, category: string): Promise<Product[]> {
+    const products: Product[] = [];
+    
+    this.emitActivity(run.id, {
+      type: 'actor_start',
+      timestamp: new Date().toISOString(),
+      message: `[TikTok Shop] Searching: "${keyword}"`,
+      details: { keyword, source: 'tiktok_shop' }
+    });
+
+    try {
+      const input = {
+        mode: 'Shop Search',
+        search: keyword,
+        maxResult: 20,
+        region: 'US',
+      };
+
+      const actorRun = await apifyService.runActor(SHOPPDROPP_ACTORS.tiktok_shop, input, {
+        waitForFinish: true,
+        waitSecs: 180,
+      });
+
+      const results = await apifyService.getDatasetItems(actorRun.defaultDatasetId, { limit: 50 });
+      
+      this.emitActivity(run.id, {
+        type: 'actor_complete',
+        timestamp: new Date().toISOString(),
+        message: `[TikTok Shop] "${keyword}": ${results.length} products`,
+        details: { keyword, count: results.length, source: 'tiktok_shop' }
+      });
+
+      // Extract products from TikTok Shop results
+      for (const item of results) {
+        if (item.title || item.productName) {
+          const productName = item.title || item.productName || '';
+          const description = item.description || item.productDescription || '';
+          
+          // Parse price
+          let price: number | undefined;
+          if (item.price?.min || item.price?.max) {
+            price = item.price.min || item.price.max;
+          } else if (typeof item.price === 'number') {
+            price = item.price;
+          } else if (typeof item.price === 'string') {
+            price = parseFloat(item.price.replace(/[^0-9.]/g, ''));
+          }
+          
+          // Parse original/compare price
+          let originalPrice: number | undefined;
+          if (item.originalPrice || item.compareAtPrice) {
+            const raw = item.originalPrice || item.compareAtPrice;
+            if (typeof raw === 'number') originalPrice = raw;
+            else if (typeof raw === 'string') originalPrice = parseFloat(raw.replace(/[^0-9.]/g, ''));
+          }
+          
+          // Get images
+          const imageUrl = item.mainImage?.url || item.images?.[0]?.url || item.image || item.thumbnail;
+          
+          // Get video URL if available
+          const videoUrl = item.videoUrl || item.video?.url || item.promotionVideo?.url;
+          
+          // Get product URL
+          const sourceUrl = item.productUrl || item.url || item.link || `https://shop.tiktok.com/product/${item.productId}`;
+          
+          products.push({
+            id: uuidv4(),
+            name: productName.substring(0, 200),
+            description: description.substring(0, 500),
+            source: 'tiktok_shop',
+            sourceUrl: sourceUrl,
+            category: category,
+            searchTerm: keyword,
+            imageUrl: imageUrl,
+            videoUrl: videoUrl,
+            tiktokVideoUrl: videoUrl,
+            price: price,
+            originalPrice: originalPrice,
+            rating: item.rating || item.ratingScore,
+            reviewCount: item.reviewCount || item.reviews,
+            relevanceScore: item.soldCount ? Math.min(item.soldCount / 100, 10) : 5,
+            timestamp: new Date().toISOString(),
+            raw: item,
+            tiktokShopData: {
+              shopName: item.shopName || item.seller,
+              soldCount: item.soldCount || item.sales,
+              gmv: item.gmv || item.grossMerchandiseValue,
+              commissionRate: item.commissionRate,
+              productId: item.productId || item.id,
+            }
+          });
+        }
+      }
+    } catch (error: any) {
+      this.emitActivity(run.id, {
+        type: 'error',
+        timestamp: new Date().toISOString(),
+        message: `[TikTok Shop] "${keyword}" failed: ${error.message}`,
+        details: { keyword, error: error.message }
       });
     }
 
@@ -600,13 +813,10 @@ export class AdaptiveResearchPipeline extends EventEmitter {
     });
 
     try {
+      // Amazon crawler actor (junglee/amazon-crawler) expects search keywords, not URLs
       const input = {
-        startUrls: [candidate.term],
+        keyword: candidate.term.replace(/^https?:\/\/www\.amazon\.com\/s\?k=/, '').replace(/&.*$/, '').replace(/\+/g, ' '),
         maxResults: 50,
-        useProxy: true,
-        proxyConfig: {
-          useApifyProxy: true,
-        },
       };
 
       const actorRun = await apifyService.runActor(SHOPPDROPP_ACTORS.amazon, input, {
@@ -694,6 +904,25 @@ export class AdaptiveResearchPipeline extends EventEmitter {
   }
 
   /**
+   * Clean keyword - remove emojis, special chars, extra spaces
+   */
+  private cleanKeyword(input: any): string {
+    let str = Array.isArray(input) ? input[0] : String(input || '');
+    return str
+      .toLowerCase()
+      // Remove all emojis and special unicode symbols
+      .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F900}-\u{1F9FF}\u{1F018}-\u{1F270}\u{238C}\u{2B06}\u{2B07}\u{2B05}\u{27A1}\u{2194}-\u{2199}\u{21A9}-\u{21AA}\u{2934}-\u{2935}\u{25AA}-\u{25AB}\u{25FB}-\u{25FE}\u{25FD}-\u{25FE}\u{2B50}\u{2B55}\u{2328}\u{23CF}\u{23E9}-\u{23F3}\u{23F8}-\u{23FA}\u{24C2}\u{23EE}\u{23ED}\u{23EF}\u{267E}\u{267F}\u{2692}-\u{2697}\u{2699}\u{269B}-\u{269C}\u{26A0}-\u{26A1}\u{26AA}-\u{26AB}\u{26B0}-\u{26B1}\u{26BD}-\u{26BE}\u{26C4}-\u{26C5}\u{26CE}\u{26D1}\u{26D3}-\u{26D4}\u{26E9}-\u{26EA}\u{26F0}-\u{26F5}\u{26F7}-\u{26FA}\u{26FD}\u{2702}\u{2705}\u{2708}-\u{270D}\u{270F}\u{2712}\u{2714}\u{2716}\u{271D}\u{2721}\u{2728}\u{2733}-\u{2734}\u{2744}\u{2747}\u{274C}\u{274E}\u{2753}-\u{2755}\u{2795}-\u{2797}\u{27A1}\u{27B0}\u{27BF}\u{2934}-\u{2935}\u{2B05}-\u{2B07}\u{2B1B}-\u{2B1C}\u{2B50}\u{2B55}]/gu, '')
+      // Split on dash and take first part (remove descriptions)
+      .split(/\s*[-–—]\s*/)[0]
+      // Remove URLs
+      .replace(/https?:\/\/\S+/g, '')
+      // Remove special characters except spaces and basic punctuation
+      .replace(/[^a-z0-9\s]/g, '')
+      .trim()
+      .replace(/\s+/g, ' ');
+  }
+
+  /**
    * Extract product name from text
    */
   private extractProductNameFromText(text: string): string | null {
@@ -770,6 +999,7 @@ export class AdaptiveResearchPipeline extends EventEmitter {
         searches: run.searchStats.totalSearches,
         bySource: {
           tiktok: run.searchStats.productsFromTikTok,
+          tiktokShop: run.searchStats.productsFromTikTokShop,
           googleTrends: run.searchStats.productsFromGoogleTrends,
           reddit: run.searchStats.productsFromReddit,
           amazon: run.searchStats.productsFromAmazon
