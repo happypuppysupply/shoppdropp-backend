@@ -89,8 +89,21 @@ interface Product {
   cjData?: {
     available: boolean;
     productId?: string;
+    productName?: string;
+    productImage?: string;
+    productUrl?: string;
     price?: number;
+    shippingCost?: number;
+    totalCost?: number;
+    profit?: number;
+    margin?: number;
+    deliveryMinDays?: number;
+    deliveryMaxDays?: number;
+    deliveryTime?: string;
     warehouse?: string;
+    variantSku?: string;
+    variantName?: string;
+    stock?: number;
   };
   tiktokShopData?: {
     shopName?: string;
@@ -1044,7 +1057,46 @@ export class AdaptiveResearchPipeline extends EventEmitter {
   }
 
   /**
+   * Extract key search terms from a product name for CJ search
+   * Uses first 2-3 meaningful words to improve match rate
+   */
+  private extractCJSearchTerms(productName: string): string[] {
+    // Remove common descriptors and stop words
+    const stopWords = new Set(['the', 'a', 'an', 'and', 'or', 'for', 'with', 'in', 'on', 'at', 'to', 'of', 'by', 'from', 'up', 'about', 'into', 'through', 'during', 'before', 'after', 'above', 'below', 'between', 'among', 'within', 'without', 'against', 'under', 'over', 'via', 'per', 'via', 'new', 'premium', 'professional', 'original', 'authentic', 'genuine', 'official', 'brand', 'hot', 'best', 'top', 'high', 'quality', 'super', 'ultra', 'mega', 'mini', 'max', 'pro', 'plus', 'lite', ' deluxe', 'ultimate', 'advanced', 'enhanced', 'improved', 'upgraded', 'latest', 'modern', ' stylish', 'trendy', 'popular', 'famous', 'recommended', 'suggested', 'selected', 'exclusive', 'special', 'limited', 'edition', 'collection', 'series', 'set', 'kit', 'pack', 'bundle', 'combo', 'deal', 'sale', 'discount', 'offer', 'gift', 'free', 'bonus', 'extra', 'additional', 'more', 'most', 'very', 'really', 'truly', 'actually', 'definitely', 'absolutely', 'completely', 'totally', 'fully', 'entirely', 'quite', 'rather', 'pretty', 'fairly', 'somewhat', 'slightly', 'hardly', 'barely', 'nearly', 'almost', 'practically', 'virtually', 'basically', 'essentially', 'fundamentally', 'primarily', 'mainly', 'mostly', 'largely', 'partly', 'partially', 'specifically', 'particularly', 'especially', 'notably', 'remarkably', 'significantly', 'considerably', 'substantially', 'greatly', 'highly', 'deeply', 'strongly', 'widely', 'broadly', 'generally', 'typically', 'usually', 'normally', 'commonly', 'frequently', 'often', 'regularly', 'repeatedly', 'consistently', 'constantly', 'continuously', 'continually', 'persistently', 'permanently', 'temporarily', 'occasionally', 'sometimes', 'rarely', 'seldom', 'never', 'always', 'forever', 'ever', 'never', 'yet', 'still', 'already', 'soon', 'now', 'then', 'today', 'tomorrow', 'yesterday', 'tonight', 'morning', 'afternoon', 'evening', 'night', 'day', 'week', 'month', 'year', 'time', 'moment', 'minute', 'second', 'hour', 'date', 'period', 'era', 'age', 'epoch', 'season', 'spring', 'summer', 'autumn', 'fall', 'winter', 'january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'first', 'second', 'third', 'fourth', 'fifth', 'last', 'final', 'next', 'previous', 'former', 'latter', 'other', 'another', 'same', 'different', 'similar', 'various', 'several', 'many', 'much', 'more', 'most', 'some', 'any', 'all', 'none', 'no', 'each', 'every', 'both', 'either', 'neither', 'half', 'whole', 'full', 'empty', 'enough', 'plenty', 'lot', 'few', 'little', 'less', 'least', 'fewer', 'small', 'large', 'big', 'huge', 'tiny', 'little', 'short', 'long', 'tall', 'high', 'low', 'deep', 'shallow', 'wide', 'narrow', 'thick', 'thin', 'fat', ' slim', 'heavy', 'light', 'strong', 'weak', 'hard', 'soft', 'smooth', 'rough', 'sharp', 'blunt', 'flat', 'round', 'square', 'straight', 'curved', 'bent', 'twisted', 'clean', 'dirty', 'fresh', 'stale', 'wet', 'dry', 'damp', 'moist', 'hot', 'cold', 'warm', 'cool', 'freezing', 'boiling', 'lukewarm', 'tepid', 'icy', 'burning', 'frozen', 'melted', 'solid', 'liquid', 'gas', 'air', 'water', 'fire', 'earth', 'wind', 'rain', 'snow', 'ice', 'steam', 'fog', 'mist', 'cloud', 'smoke', 'dust', 'sand', 'soil', 'mud', 'clay', 'rock', 'stone', 'gravel', 'pebble', 'crystal', 'gem', 'jewel', 'diamond', 'gold', 'silver', 'copper', 'iron', 'steel', 'metal', 'wood', 'paper', 'glass', 'plastic', 'rubber', 'leather', 'cotton', 'silk', 'wool', 'linen', 'nylon', 'polyester', 'fiber', 'fabric', 'cloth', 'material', 'substance', 'stuff', 'thing', 'object', 'item', 'piece', 'part', 'portion', 'section', 'segment', 'component', 'element', 'ingredient', 'factor', 'aspect', 'feature', 'characteristic', 'quality', 'property', 'attribute', 'trait', 'detail', 'point', 'element', 'item', 'unit', 'member', 'individual', 'entity', 'being', 'creature', 'animal', 'plant', 'human', 'person', 'people', 'man', 'woman', 'child', 'baby', 'adult', 'youth', 'teenager', 'adult', 'senior', 'elder', 'male', 'female', 'boy', 'girl', 'guy', 'lady', 'gentleman', 'friend', 'enemy', 'stranger', 'neighbor', 'colleague', 'partner', 'spouse', 'parent', 'mother', 'father', 'mom', 'dad', 'son', 'daughter', 'brother', 'sister', 'sibling', 'cousin', 'uncle', 'aunt', 'nephew', 'niece', 'relative', 'family', 'home', 'house', 'room', 'kitchen', 'bedroom', 'bathroom', 'living', 'dining', 'garage', 'garden', 'yard', 'office', 'school', 'college', 'university', 'hospital', 'clinic', 'store', 'shop', 'market', 'mall', 'restaurant', 'cafe', 'hotel', 'motel', 'building', 'tower', 'bridge', 'road', 'street', 'avenue', 'lane', 'drive', 'way', 'path', 'trail', 'track', 'route', 'course', 'direction', 'place', 'location', 'position', 'spot', 'site', 'area', 'region', 'zone', 'district', 'neighborhood', 'city', 'town', 'village', 'country', 'nation', 'state', 'province', 'county', 'continent', 'world', 'globe', 'earth', 'planet', 'space', 'universe', 'nature', 'environment', 'ecosystem', 'habitat', 'climate', 'weather', 'temperature', 'humidity', 'pressure', 'wind', 'storm', 'hurricane', 'tornado', 'earthquake', 'flood', 'drought', 'fire', 'disaster', 'accident', 'incident', 'event', 'occasion', 'situation', 'circumstance', 'condition', 'state', 'status', 'position', 'level', 'degree', 'grade', 'rank', 'class', 'category', 'type', 'kind', 'sort', 'variety', 'form', 'shape', 'size', 'color', 'colour', 'red', 'blue', 'green', 'yellow', 'orange', 'purple', 'pink', 'brown', 'black', 'white', 'gray', 'grey', 'silver', 'gold', 'beige', 'cream', 'ivory', 'maroon', 'navy', 'teal', 'olive', 'lime', 'aqua', 'coral', 'peach', 'mauve', 'tan', 'khaki', 'indigo', 'violet', 'magenta', 'cyan', 'turquoise', 'bronze', 'copper', 'brass', 'platinum', 'chrome', 'nickel', 'zinc', 'lead', 'tin', 'aluminum', 'aluminium']);
+    
+    const words = productName
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .split(/\s+/)
+      .filter(w => w.length > 2 && !stopWords.has(w));
+    
+    // Generate search terms of varying specificity
+    const terms: string[] = [];
+    
+    // First 2 words (most specific)
+    if (words.length >= 2) {
+      terms.push(words.slice(0, 2).join(' '));
+    }
+    
+    // First 3 words
+    if (words.length >= 3) {
+      terms.push(words.slice(0, 3).join(' '));
+    }
+    
+    // Single most important word (category indicator)
+    if (words.length > 0) {
+      terms.push(words[0]);
+    }
+    
+    // Fallback to cleaned full name (limited)
+    terms.push(productName.substring(0, 40).trim());
+    
+    return [...new Set(terms)];
+  }
+
+  /**
    * Verify products on CJ Dropshipping
+   * Searches CJ for each product, calculates shipping cost and margin
    */
   private async verifyOnCJ(run: ResearchRun, products: Product[]): Promise<Product[]> {
     this.emitActivity(run.id, {
@@ -1058,25 +1110,100 @@ export class AdaptiveResearchPipeline extends EventEmitter {
 
     for (let i = 0; i < products.length && verified.length < targetCount; i++) {
       const product = products[i];
-      const searchTerm = product.name.substring(0, 50);
+      const searchTerms = this.extractCJSearchTerms(product.name);
       
-      try {
-        const cjProducts = await cjDropshippingService.searchProducts(searchTerm, { pageSize: 5 });
+      let cjMatch: any = null;
+      let cjDetails: any = null;
+      
+      // Try each search term until we find a match
+      for (const term of searchTerms) {
+        try {
+          const cjProducts = await cjDropshippingService.searchProducts(term, { pageSize: 5 });
+          if (cjProducts.length > 0) {
+            cjMatch = cjProducts[0];
+            break;
+          }
+        } catch (e) {
+          // Try next term
+        }
+      }
+      
+      if (cjMatch) {
+        try {
+          // Get detailed product info with variants
+          cjDetails = await cjDropshippingService.getProductDetails(cjMatch.pid);
+        } catch (e) {
+          cjDetails = cjMatch;
+        }
         
-        if (cjProducts.length > 0) {
-          const bestMatch = cjProducts[0];
+        const variant = cjDetails?.variants?.[0] || cjMatch?.variants?.[0];
+        
+        if (variant) {
+          // Calculate shipping cost and delivery time
+          let shippingCost = 0;
+          let deliveryMinDays = 0;
+          let deliveryMaxDays = 0;
+          
+          try {
+            const shippingOptions = await cjDropshippingService.calculateShipping(
+              [{ variantId: variant.vid, quantity: 1 }],
+              'US'
+            );
+            
+            if (shippingOptions.length > 0) {
+              // Pick cheapest option
+              const cheapest = shippingOptions.sort((a, b) => a.shippingCost - b.shippingCost)[0];
+              shippingCost = cheapest.shippingCost;
+              deliveryMinDays = cheapest.deliveryMinDays;
+              deliveryMaxDays = cheapest.deliveryMaxDays;
+            }
+          } catch (e) {
+            // Use defaults if shipping calc fails
+          }
+          
+          const cjCost = variant.variationPrice;
+          const totalCost = cjCost + shippingCost;
+          const tiktokPrice = product.price || 0;
+          const profit = tiktokPrice > 0 ? tiktokPrice - totalCost : 0;
+          const marginPercent = tiktokPrice > 0 ? (profit / tiktokPrice) * 100 : 0;
+          
           verified.push({
             ...product,
             cjData: {
               available: true,
-              productId: bestMatch.pid,
-              price: bestMatch.variants?.[0]?.variationPrice,
+              productId: cjMatch.pid,
+              productName: cjMatch.productName,
+              productImage: cjMatch.productImage,
+              productUrl: cjMatch.productUrl,
+              price: cjCost,
+              shippingCost: shippingCost,
+              totalCost: totalCost,
+              profit: profit,
+              margin: Math.round(marginPercent * 100) / 100,
+              deliveryMinDays: deliveryMinDays,
+              deliveryMaxDays: deliveryMaxDays,
+              deliveryTime: deliveryMinDays > 0 && deliveryMaxDays > 0 
+                ? `${deliveryMinDays}-${deliveryMaxDays} days` 
+                : 'N/A',
               warehouse: 'CJ Dropshipping',
+              variantSku: variant.variationSku,
+              variantName: variant.propertyValue || 'Default',
+              stock: variant.stock,
             }
           });
+          
+          this.emitActivity(run.id, {
+            type: 'success',
+            timestamp: new Date().toISOString(),
+            message: `✅ ${product.name.substring(0, 40)}... — CJ: $${cjCost} + shipping $${shippingCost} = margin ${Math.round(marginPercent)}%`,
+          });
         }
-      } catch (error) {
-        // Continue with next product
+      } else {
+        this.emitActivity(run.id, {
+          type: 'info',
+          timestamp: new Date().toISOString(),
+          message: `❌ ${product.name.substring(0, 40)}... — Not found on CJ`,
+        });
       }
     }
 
