@@ -654,14 +654,16 @@ export class AdaptiveResearchPipeline extends EventEmitter {
 
       // Extract products from TikTok Shop results
       for (const item of results) {
-        if (item.title || item.productName) {
-          const productName = item.title || item.productName || '';
-          const description = item.description || item.productDescription || '';
+        if (item.title) {
+          const productName = item.title || '';
+          const description = item.description || '';
           
-          // Parse price
+          // Parse price from priceDisplay (e.g., "$33.99")
           let price: number | undefined;
-          if (item.price?.min || item.price?.max) {
-            price = item.price.min || item.price.max;
+          if (item.priceDisplay) {
+            price = parseFloat(item.priceDisplay.replace(/[^0-9.]/g, ''));
+          } else if (item.price?.min) {
+            price = item.price.min;
           } else if (typeof item.price === 'number') {
             price = item.price;
           } else if (typeof item.price === 'string') {
@@ -670,20 +672,15 @@ export class AdaptiveResearchPipeline extends EventEmitter {
           
           // Parse original/compare price
           let originalPrice: number | undefined;
-          if (item.originalPrice || item.compareAtPrice) {
-            const raw = item.originalPrice || item.compareAtPrice;
-            if (typeof raw === 'number') originalPrice = raw;
-            else if (typeof raw === 'string') originalPrice = parseFloat(raw.replace(/[^0-9.]/g, ''));
+          if (item.originalPrice) {
+            originalPrice = parseFloat(item.originalPrice.replace(/[^0-9.]/g, ''));
           }
           
-          // Get images
-          const imageUrl = item.mainImage?.url || item.images?.[0]?.url || item.image || item.thumbnail;
-          
-          // Get video URL if available
-          const videoUrl = item.videoUrl || item.video?.url || item.promotionVideo?.url;
+          // Get images - use primaryImage from TikTok Shop
+          const imageUrl = item.primaryImage || item.mainImage?.url || item.images?.[0]?.url || item.image;
           
           // Get product URL
-          const sourceUrl = item.productUrl || item.url || item.link || `https://shop.tiktok.com/product/${item.productId}`;
+          const sourceUrl = item.productUrl || `https://www.tiktok.com/shop/pdp/${item.productId}`;
           
           products.push({
             id: uuidv4(),
@@ -694,21 +691,17 @@ export class AdaptiveResearchPipeline extends EventEmitter {
             category: category,
             searchTerm: keyword,
             imageUrl: imageUrl,
-            videoUrl: videoUrl,
-            tiktokVideoUrl: videoUrl,
             price: price,
-            originalPrice: originalPrice,
-            rating: item.rating || item.ratingScore,
-            reviewCount: item.reviewCount || item.reviews,
+            rating: item.rating,
+            reviewCount: item.reviewCount,
             relevanceScore: item.soldCount ? Math.min(item.soldCount / 100, 10) : 5,
             timestamp: new Date().toISOString(),
             raw: item,
             tiktokShopData: {
-              shopName: item.shopName || item.seller,
-              soldCount: item.soldCount || item.sales,
-              gmv: item.gmv || item.grossMerchandiseValue,
-              commissionRate: item.commissionRate,
-              productId: item.productId || item.id,
+              shopName: item.shopName,
+              soldCount: item.soldCount,
+              discountPercent: item.discountPercent,
+              productId: item.productId,
             }
           });
         }
