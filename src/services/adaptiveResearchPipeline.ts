@@ -548,6 +548,7 @@ export class AdaptiveResearchPipeline extends EventEmitter {
       'electronics': ['electronics', 'phone', 'tech', 'gadgets', 'charger'],
       'sports': ['sports', 'fitness', 'gym', 'workout', 'yoga'],
       'toys': ['toys', 'kids', 'children', 'games', 'educational'],
+
     };
 
     // Find matching category - check if category contains any map key
@@ -566,6 +567,7 @@ export class AdaptiveResearchPipeline extends EventEmitter {
       for (const [key, terms] of Object.entries(categoryProductMap)) {
         if (catLower.includes(key) || subLower.includes(key)) {
           baseTerms = terms;
+
           break;
         }
       }
@@ -609,6 +611,7 @@ export class AdaptiveResearchPipeline extends EventEmitter {
     }
 
     return keywords;
+
   }
 
   /**
