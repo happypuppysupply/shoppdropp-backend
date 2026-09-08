@@ -529,33 +529,36 @@ export class AdaptiveResearchPipeline extends EventEmitter {
 
   /**
    * Generate TikTok Shop search keywords from category
+   * Uses specific product terms rather than generic categories for better results
    */
   private generateTikTokShopKeywords(category: string, subcategory: string, iteration: number): string[] {
-    const baseKeywords = [
-      category,
-      subcategory,
-      `${category} ${subcategory}`,
-      `best ${category}`,
-      `trending ${category}`,
-      `viral ${subcategory}`,
-      `${category} must have`,
-      `${category} finds`,
-      `popular ${subcategory}`,
-      `${category} 2026`,
-    ];
-    
-    // Add variation based on iteration
-    if (iteration > 1) {
-      baseKeywords.push(
-        `new ${category}`,
-        `hot ${subcategory}`,
-        `${category} deals`,
-        `${subcategory} collection`,
-        `affordable ${category}`
-      );
+    // Map categories to specific product search terms that work well on TikTok Shop
+    const categoryProductMap: Record<string, string[]> = {
+      'pet': ['pet toys', 'dog bed', 'cat tree', 'pet bowl', 'dog leash', 'pet brush', 'dog toy', 'cat toy', 'pet bed', 'pet carrier'],
+      'dog': ['dog toys', 'dog bed', 'dog leash', 'dog collar', 'dog bowl', 'dog treats', 'dog harness', 'dog grooming', 'dog accessories', 'puppy supplies'],
+      'cat': ['cat toys', 'cat tree', 'cat bed', 'cat litter', 'cat scratcher', 'cat treats', 'cat bowl', 'cat carrier', 'cat collar', 'kitten supplies'],
+      'home': ['home decor', 'wall art', 'storage organizer', 'kitchen gadgets', 'home accessories', 'bathroom accessories', 'bedding set', 'throw pillows', 'candles', 'mirrors'],
+      'kitchen': ['kitchen gadgets', 'cooking utensils', 'food containers', 'coffee maker', 'air fryer', 'blender', 'kitchen organizer', 'cutting board', 'spice rack', 'apron'],
+      'beauty': ['makeup brushes', 'skincare tools', 'hair dryer', 'beauty blender', 'face roller', 'makeup remover', 'lipstick set', 'eyelash curler', 'nail dryer', 'facial cleanser'],
+      'fashion': ['sunglasses', 'jewelry set', 'handbag', 'watches', 'hair clips', 'fashion accessories', 'scarves', 'belts', 'hats', 'socks pack'],
+      'electronics': ['phone case', 'airpods case', 'phone stand', 'cable organizer', 'wireless charger', 'bluetooth speaker', 'smart watch', 'led lights', 'power bank', 'usb hub'],
+      'sports': ['yoga mat', 'resistance bands', 'water bottle', 'gym bag', 'sports watch', 'fitness tracker', 'massage gun', 'foam roller', 'jump rope', 'exercise ball'],
+      'toys': ['building blocks', 'educational toys', 'plush toys', 'remote control car', 'puzzle games', 'action figures', 'doll house', 'board games', 'kids tent', 'slime kit'],
+    };
+
+    // Get specific products for this category, fallback to generic terms
+    const specificProducts = categoryProductMap[category.toLowerCase()] || 
+                             categoryProductMap[subcategory.toLowerCase()] || 
+                             [`${category} products`, subcategory, category];
+
+    // Add iteration-based variations
+    if (iteration === 1) {
+      return specificProducts.slice(0, 5);
+    } else if (iteration === 2) {
+      return [...specificProducts.slice(5, 10), `best ${category} products`, `trending ${subcategory}`];
+    } else {
+      return [`new ${category} arrivals`, `hot ${subcategory} 2026`, `${category} deals`, `viral ${category}`];
     }
-    
-    return baseKeywords;
   }
 
   /**
