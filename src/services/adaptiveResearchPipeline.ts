@@ -531,34 +531,84 @@ export class AdaptiveResearchPipeline extends EventEmitter {
    * Generate TikTok Shop search keywords from category
    * Uses specific product terms rather than generic categories for better results
    */
+  // Track used TikTok Shop keywords to avoid infinite loops
+  private usedTikTokShopKeywords: Set<string> = new Set();
+
   private generateTikTokShopKeywords(category: string, subcategory: string, iteration: number): string[] {
     // Map categories to specific product search terms that work well on TikTok Shop
+    // Use terms that are known to work on TikTok Shop US
     const categoryProductMap: Record<string, string[]> = {
-      'pet': ['pet toys', 'dog bed', 'cat tree', 'pet bowl', 'dog leash', 'pet brush', 'dog toy', 'cat toy', 'pet bed', 'pet carrier'],
-      'dog': ['dog toys', 'dog bed', 'dog leash', 'dog collar', 'dog bowl', 'dog treats', 'dog harness', 'dog grooming', 'dog accessories', 'puppy supplies'],
-      'cat': ['cat toys', 'cat tree', 'cat bed', 'cat litter', 'cat scratcher', 'cat treats', 'cat bowl', 'cat carrier', 'cat collar', 'kitten supplies'],
-      'home': ['home decor', 'wall art', 'storage organizer', 'kitchen gadgets', 'home accessories', 'bathroom accessories', 'bedding set', 'throw pillows', 'candles', 'mirrors'],
-      'kitchen': ['kitchen gadgets', 'cooking utensils', 'food containers', 'coffee maker', 'air fryer', 'blender', 'kitchen organizer', 'cutting board', 'spice rack', 'apron'],
-      'beauty': ['makeup brushes', 'skincare tools', 'hair dryer', 'beauty blender', 'face roller', 'makeup remover', 'lipstick set', 'eyelash curler', 'nail dryer', 'facial cleanser'],
-      'fashion': ['sunglasses', 'jewelry set', 'handbag', 'watches', 'hair clips', 'fashion accessories', 'scarves', 'belts', 'hats', 'socks pack'],
-      'electronics': ['phone case', 'airpods case', 'phone stand', 'cable organizer', 'wireless charger', 'bluetooth speaker', 'smart watch', 'led lights', 'power bank', 'usb hub'],
-      'sports': ['yoga mat', 'resistance bands', 'water bottle', 'gym bag', 'sports watch', 'fitness tracker', 'massage gun', 'foam roller', 'jump rope', 'exercise ball'],
-      'toys': ['building blocks', 'educational toys', 'plush toys', 'remote control car', 'puzzle games', 'action figures', 'doll house', 'board games', 'kids tent', 'slime kit'],
+      'pet': ['pet', 'dog', 'cat', 'puppy', 'kitten'],
+      'dog': ['dog', 'puppy', 'pet'],
+      'cat': ['cat', 'kitten', 'pet'],
+      'home': ['home', 'decor', 'kitchen', 'bathroom', 'bedroom'],
+      'kitchen': ['kitchen', 'cooking', 'food', 'dining'],
+      'beauty': ['beauty', 'makeup', 'skincare', 'cosmetics', 'hair'],
+      'fashion': ['fashion', 'clothing', 'accessories', 'jewelry', 'shoes'],
+      'electronics': ['electronics', 'phone', 'tech', 'gadgets', 'charger'],
+      'sports': ['sports', 'fitness', 'gym', 'workout', 'yoga'],
+      'toys': ['toys', 'kids', 'children', 'games', 'educational'],
     };
 
-    // Get specific products for this category, fallback to generic terms
-    const specificProducts = categoryProductMap[category.toLowerCase()] || 
-                             categoryProductMap[subcategory.toLowerCase()] || 
-                             [`${category} products`, subcategory, category];
-
-    // Add iteration-based variations
-    if (iteration === 1) {
-      return specificProducts.slice(0, 5);
-    } else if (iteration === 2) {
-      return [...specificProducts.slice(5, 10), `best ${category} products`, `trending ${subcategory}`];
+    // Find matching category - check if category contains any map key
+    const catLower = category.toLowerCase();
+    const subLower = subcategory.toLowerCase();
+    
+    let baseTerms: string[] | null = null;
+    
+    // Try exact match first
+    if (categoryProductMap[catLower]) {
+      baseTerms = categoryProductMap[catLower];
+    } else if (categoryProductMap[subLower]) {
+      baseTerms = categoryProductMap[subLower];
     } else {
-      return [`new ${category} arrivals`, `hot ${subcategory} 2026`, `${category} deals`, `viral ${category}`];
+      // Try partial match
+      for (const [key, terms] of Object.entries(categoryProductMap)) {
+        if (catLower.includes(key) || subLower.includes(key)) {
+          baseTerms = terms;
+          break;
+        }
+      }
     }
+    
+    // Fallback to category-based terms
+    if (!baseTerms) {
+      baseTerms = [category, subcategory].filter(Boolean);
+    }
+
+    // Generate keywords based on iteration, avoiding used ones
+    const keywords: string[] = [];
+    const variations = [
+      // Simple broad terms that work on TikTok Shop
+      ...baseTerms,
+      // Common TikTok Shop categories
+      `${baseTerms[0]} accessories`,
+      `${baseTerms[0]} products`,
+      `${baseTerms[0]} finds`,
+      // Add iteration-specific variations
+      iteration === 1 ? `${baseTerms[0]}` : null,
+      iteration === 2 ? `${baseTerms[0]} must have` : null,
+      iteration >= 3 ? `viral ${baseTerms[0]}` : null,
+      iteration >= 3 ? `trending ${baseTerms[0]}` : null,
+      iteration >= 4 ? `${baseTerms[0]} 2026` : null,
+      iteration >= 4 ? `best ${baseTerms[0]}` : null,
+    ].filter(Boolean) as string[];
+
+    // Filter out already-used keywords
+    for (const kw of variations) {
+      if (!this.usedTikTokShopKeywords.has(kw) && keywords.length < 4) {
+        keywords.push(kw);
+        this.usedTikTokShopKeywords.add(kw);
+      }
+    }
+
+    // If we've exhausted all variations, clear and try broader terms
+    if (keywords.length === 0) {
+      this.usedTikTokShopKeywords.clear();
+      keywords.push(...baseTerms.slice(0, 4));
+    }
+
+    return keywords;
   }
 
   /**
@@ -577,7 +627,7 @@ export class AdaptiveResearchPipeline extends EventEmitter {
     try {
       const input = {
         mode: 'Shop Search',
-        search: keyword,
+        search: [keyword],  // Array format required by TikTok Shop actor
         maxResult: 20,
         region: 'US',
       };
