@@ -580,20 +580,21 @@ export class AdaptiveResearchPipeline extends EventEmitter {
 
     // Generate keywords based on iteration, avoiding used ones
     const keywords: string[] = [];
+    const baseTerm = baseTerms[0] || category || 'products';
     const variations = [
       // Simple broad terms that work on TikTok Shop
       ...baseTerms,
       // Common TikTok Shop categories
-      `${baseTerms[0]} accessories`,
-      `${baseTerms[0]} products`,
-      `${baseTerms[0]} finds`,
+      `${baseTerm} accessories`,
+      `${baseTerm} products`,
+      `${baseTerm} finds`,
       // Add iteration-specific variations
-      iteration === 1 ? `${baseTerms[0]}` : null,
-      iteration === 2 ? `${baseTerms[0]} must have` : null,
-      iteration >= 3 ? `viral ${baseTerms[0]}` : null,
-      iteration >= 3 ? `trending ${baseTerms[0]}` : null,
-      iteration >= 4 ? `${baseTerms[0]} 2026` : null,
-      iteration >= 4 ? `best ${baseTerms[0]}` : null,
+      iteration === 1 ? `${baseTerm}` : null,
+      iteration === 2 ? `${baseTerm} must have` : null,
+      iteration >= 3 ? `viral ${baseTerm}` : null,
+      iteration >= 3 ? `trending ${baseTerm}` : null,
+      iteration >= 4 ? `${baseTerm} 2026` : null,
+      iteration >= 4 ? `best ${baseTerm}` : null,
     ].filter(Boolean) as string[];
 
     // Filter out already-used keywords
