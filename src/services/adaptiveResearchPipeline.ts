@@ -546,18 +546,51 @@ export class AdaptiveResearchPipeline extends EventEmitter {
       'toys': ['building blocks', 'educational toys', 'plush toys', 'remote control car', 'puzzle games', 'action figures', 'doll house', 'board games', 'kids tent', 'slime kit'],
     };
 
-    // Get specific products for this category, fallback to generic terms
-    const specificProducts = categoryProductMap[category.toLowerCase()] || 
-                             categoryProductMap[subcategory.toLowerCase()] || 
-                             [`${category} products`, subcategory, category];
+    // Find matching category - check if category contains any map key
+    const catLower = category.toLowerCase();
+    const subLower = subcategory.toLowerCase();
+    
+    let specificProducts: string[] | null = null;
+    
+    // Try exact match first
+    if (categoryProductMap[catLower]) {
+      specificProducts = categoryProductMap[catLower];
+    } else if (categoryProductMap[subLower]) {
+      specificProducts = categoryProductMap[subLower];
+    } else {
+      // Try partial match - find if any map key is contained in the category
+      for (const [key, products] of Object.entries(categoryProductMap)) {
+        if (catLower.includes(key) || subLower.includes(key)) {
+          specificProducts = products;
+          break;
+        }
+      }
+    }
+    
+    // Fallback to generic specific products
+    if (!specificProducts) {
+      specificProducts = [
+        `${category} toys`,
+        `${category} accessories`,
+        `${category} products`,
+        `${category} supplies`,
+        `${subcategory} items`,
+        `${category} essentials`,
+        `${category} gadgets`,
+        `${category} tools`,
+        `best ${category}`,
+        `${category} must have`
+      ];
+    }
 
     // Add iteration-based variations
     if (iteration === 1) {
       return specificProducts.slice(0, 5);
     } else if (iteration === 2) {
-      return [...specificProducts.slice(5, 10), `best ${category} products`, `trending ${subcategory}`];
+      return [...specificProducts.slice(5, 10)];
     } else {
-      return [`new ${category} arrivals`, `hot ${subcategory} 2026`, `${category} deals`, `viral ${category}`];
+      // For iteration 3+, use specific products but avoid duplicates
+      return specificProducts.slice(0, 4);
     }
   }
 
